@@ -225,17 +225,27 @@ export async function saveDocument(input: {
   const sourceIdByKey = new Map((sourceRows ?? []).map((row) => [row.canonical_key as string, row.id as string]));
 
   if (sourceRows?.length && input.citations.length) {
-    const aliases = input.citations
-      .filter((citation) => citation.sourceKey && sourceIdByKey.has(citation.sourceKey))
-      .map((citation) => ({
-        source_id: sourceIdByKey.get(citation.sourceKey as string)!,
-        alias_text: citation.rawText,
-        normalized_alias: normalizeAlias(citation.rawText),
-        alias_type: citation.citationStage === "first" ? "first-form" : "subsequent-form",
-        confidence: citation.confidence
-      }));
+    const aliases = Array.from(
+      new Map(
+        input.citations
+          .filter((citation) => citation.sourceKey && sourceIdByKey.has(citation.sourceKey))
+          .map((citation) => {
+            const normalized = normalizeAlias(citation.rawText);
+            return [{
+              source_id: sourceIdByKey.get(citation.sourceKey as string)!,
+              alias_text: citation.rawText,
+              normalized_alias: normalized,
+              alias_type: citation.citationStage === "first" ? "first-form" : "subsequent-form",
+              confidence: citation.confidence
+            }, normalized];
+          })
+          .filter((entry) => entry[1])
+      ).values()
+    );
     if (aliases.length) {
-      const { error: aliasError } = await supabase.from("source_aliases").insert(aliases);
+      const { error: aliasError } = await supabase
+        .from("source_aliases")
+        .upsert(aliases, { onConflict: "source_id,normalized_alias", ignoreDuplicates: true });
       if (aliasError) throw aliasError;
     }
   }
