@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { loadDocument, listMyDocuments, saveDocument, signOut, type PersistedDocument, type PersistedDocumentData } from "./supabase";
 import type { CitationResult } from "./kalci";
+import VersionHistory from "./VersionHistory";
 
 type Props = {
   documentId: string | null;
@@ -94,6 +95,8 @@ export default function DocumentVault(props: Props) {
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [versionRefreshKey, setVersionRefreshKey] = useState(0);
+  const [currentVersion, setCurrentVersion] = useState<number | null>(null);
 
   const title = useMemo(
     () => props.documentName?.replace(/\.docx$/i, "") || "Untitled legal document",
@@ -131,8 +134,12 @@ export default function DocumentVault(props: Props) {
       });
       props.onDocumentIdChange(saved.id);
       props.onDocumentNameChange(saved.file_name);
+      setCurrentVersion(saved.version_number ?? null);
+      setVersionRefreshKey((value) => value + 1);
       await refresh();
-      setMessage("Document saved to your KALCI vault.");
+      setMessage(saved.version_number
+        ? `Document saved as version ${saved.version_number}.`
+        : "Document saved to your KALCI vault.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -162,6 +169,8 @@ export default function DocumentVault(props: Props) {
     try {
       await signOut();
       props.onDocumentIdChange(null);
+      setCurrentVersion(null);
+      setVersionRefreshKey((value) => value + 1);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : String(error));
     } finally {
@@ -196,6 +205,14 @@ export default function DocumentVault(props: Props) {
         </div>
       )}
       {message && <span className="vault-message">{message}</span>}
+      {props.documentId && (
+        <div className="vault-version">
+          <span>{currentVersion ? `Current version ${currentVersion}` : "Saved document"}</span>
+        </div>
+      )}
+      <div className="vault-history">
+        <VersionHistory documentId={props.documentId} refreshKey={versionRefreshKey} />
+      </div>
     </div>
   );
 }
