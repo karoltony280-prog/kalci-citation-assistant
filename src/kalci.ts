@@ -77,7 +77,7 @@ export type CitationResult = {
 };
 
 const SOURCE_SIGNALS: Array<[string, RegExp, number]> = [
-  ["KENYAN_CASE", /\beKLR\b|\bKLR\b|\bEA\b/i, 0.90],
+  ["KENYAN_CASE", /\beKLR\b|\bKLR\b|\bEA\b|\b(?:High Court|Supreme Court|Court of Appeal|Environment and Land Court|Employment and Labour Relations Court|Magistrates? Court)\b/i, 0.90],
   ["FOREIGN_CASE", /\b[^,;]{2,120}\s+v(?:s|ersus)?\.?\s+[^,;]{2,120}\b/i, 0.55],
   ["AFRICAN_COURT", /\bAfCLR\b|\bAfrican Court on Human and Peoples/i, 0.95],
   ["AFRICAN_COMMISSION", /\bACmHPR\b|\bAfrican Commission/i, 0.95],
