@@ -55,6 +55,34 @@ export default function App() {
   const selectedSource = sourceTypes.find((source) => source.code === selectedType);
   const selectedTemplates = templates.filter((template) => template.source_type_id === selectedSource?.id);
 
+  const sourceLedger = useMemo(() => {
+    const map = new Map<string, {
+      name: string;
+      type: string;
+      count: number;
+      firstFootnote?: number;
+      confidence: number;
+    }>();
+
+    results.flatMap((result) => result.segments).forEach((segment) => {
+      if (!segment.sourceKey) return;
+      const existing = map.get(segment.sourceKey) ?? {
+        name: segment.components.title ?? segment.raw,
+        type: segment.sourceType,
+        count: 0,
+        confidence: 0
+      };
+      existing.count += 1;
+      existing.confidence = Math.max(existing.confidence, segment.sourceConfidence);
+      if (segment.occurrence === "first" && existing.firstFootnote === undefined) {
+        existing.firstFootnote = Number(segment.id.split("-")[0]);
+      }
+      map.set(segment.sourceKey, existing);
+    });
+
+    return Array.from(map.values()).sort((a, b) => b.count - a.count);
+  }, [results]);
+
   function runCheck() {
     setResults(analyzeFootnotes(value.split(/\r?\n/), engineTemplates));
   }
@@ -138,6 +166,26 @@ export default function App() {
               <div><b>{stats.warnings}</b><span>Warnings</span></div>
               <div><b>{stats.review}</b><span>Review</span></div>
             </section>
+
+            {sourceLedger.length > 0 && (
+              <section className="source-ledger">
+                <div className="panel-head">
+                  <div><h2>Document source ledger</h2><span>one identity tracked across all citation occurrences</span></div>
+                  <span className="ledger-count">{sourceLedger.length} sources</span>
+                </div>
+                <div className="ledger-grid">
+                  {sourceLedger.map((source, index) => (
+                    <article className="ledger-item" key={source.name + source.type + index}>
+                      <div className="ledger-top">
+                        <b>{source.name}</b>
+                        <span>{source.count} {source.count === 1 ? "occurrence" : "occurrences"}</span>
+                      </div>
+                      <small>{source.type} · {Math.round(source.confidence * 100)}% classification confidence{source.firstFootnote !== undefined ? ` · first at FN ${source.firstFootnote}` : ""}</small>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            )}
 
             <section className="workspace">
               <div className="panel">
