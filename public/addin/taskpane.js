@@ -239,6 +239,58 @@ function clearSourceLedger() {
   if (ledger) ledger.innerHTML = "";
 }
 
+
+async function auditFormatting() {
+  const status = document.getElementById("status");
+  const host = document.getElementById("formatAudit");
+  status.textContent = "Auditing Word formatting…";
+  try {
+    await Word.run(async (context) => {
+      const main = context.document.body;
+      const footnotes = context.document.getFootnoteBody();
+      main.font.load("name,size");
+      footnotes.font.load("name,size");
+      const mainParagraph = main.paragraphs.getFirst();
+      const footnoteParagraph = footnotes.paragraphs.getFirst();
+      mainParagraph.paragraphFormat.load("lineSpacing");
+      footnoteParagraph.paragraphFormat.load("lineSpacing");
+      await context.sync();
+
+      const mainFont = main.font.name || "Mixed / inherited";
+      const mainSize = main.font.size;
+      const footFont = footnotes.font.name || "Mixed / inherited";
+      const footSize = footnotes.font.size;
+      const mainSpacing = mainParagraph.paragraphFormat.lineSpacing;
+      const footSpacing = footnoteParagraph.paragraphFormat.lineSpacing;
+
+      const findings = [];
+      if (mainFont !== "Mixed / inherited" && !/times new roman/i.test(mainFont)) findings.push("Main text font should be Times New Roman.");
+      if (typeof mainSize === "number" && Math.abs(mainSize - 12) > 0.01) findings.push("Main text size should be 12 pt.");
+      if (footFont !== "Mixed / inherited" && !/calibri/i.test(footFont)) findings.push("Footnote font should be Calibri.");
+      if (typeof footSize === "number" && Math.abs(footSize - 10) > 0.01) findings.push("Footnote size should be 10 pt.");
+      if (typeof mainSpacing === "number" && Math.abs(mainSpacing - 18) > 0.01) findings.push("Main text line spacing should be 1.5 lines.");
+      if (typeof footSpacing === "number" && Math.abs(footSpacing - 12) > 0.01) findings.push("Footnote line spacing should be single.");
+
+      host.innerHTML =
+        `<div class="format-live-title">Live Word format</div>
+         <div class="format-live-grid">
+           <div><span>Main font</span><b>${escapeHtml(mainFont)}</b></div>
+           <div><span>Main size</span><b>${typeof mainSize === "number" ? mainSize + " pt" : "Mixed / inherited"}</b></div>
+           <div><span>Footnote font</span><b>${escapeHtml(footFont)}</b></div>
+           <div><span>Footnote size</span><b>${typeof footSize === "number" ? footSize + " pt" : "Mixed / inherited"}</b></div>
+           <div><span>Main spacing</span><b>${typeof mainSpacing === "number" ? mainSpacing + " pt" : "Mixed"}</b></div>
+           <div><span>Footnote spacing</span><b>${typeof footSpacing === "number" ? footSpacing + " pt" : "Mixed"}</b></div>
+         </div>
+         ${findings.length ? `<div class="format-live-findings">${findings.map((item) => `<div>• ${escapeHtml(item)}</div>`).join("")}</div>` : '<div class="format-live-ok">✓ Directly observed Word formatting matches the KALCI targets.</div>'}`;
+      status.textContent = findings.length
+        ? `Formatting audit found ${findings.length} item${findings.length === 1 ? "" : "s"} to review.`
+        : "Formatting audit complete. No direct conflicts found.";
+    });
+  } catch (error) {
+    status.textContent = "Could not audit Word formatting: " + (error?.message || String(error));
+  }
+}
+
 async function clearMarks() {
   try {
     await Word.run(async (context) => {
@@ -260,6 +312,7 @@ async function clearMarks() {
 }
 
 document.getElementById("scan").addEventListener("click", scan);
+document.getElementById("format").addEventListener("click", auditFormatting);
 document.getElementById("clear").addEventListener("click", clearMarks);
 window.applyOne = applyOne;
 window.selectOne = selectOne;
