@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { analyzeFootnotes, KALCI_RULES, type CitationResult, type KalciTemplateDefinition } from "./kalci";
+import { analyzeFootnotes, formatCitation, KALCI_RULES, type CitationResult, type KalciTemplateDefinition } from "./kalci";
 import { extractDocxFootnotesFromFile } from "./docx";
 import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate, type PersistedDocumentData } from "./supabase";
 import DocumentVault from "./DocumentVault";
@@ -65,6 +65,7 @@ export default function App() {
       firstFootnote?: number;
       confidence: number;
       occurrences: Array<{ footnote: number; stage: string; raw: string }>;
+      stageIssues: number;
     }>();
 
     results.flatMap((result) => result.segments).forEach((segment) => {
@@ -75,7 +76,8 @@ export default function App() {
         count: 0,
         confidence: 0,
         footnotes: [] as number[],
-        occurrences: [] as Array<{ footnote: number; stage: string; raw: string }>
+        occurrences: [] as Array<{ footnote: number; stage: string; raw: string }>,
+        stageIssues: 0
       };
       existing.count += 1;
       existing.confidence = Math.max(existing.confidence, segment.sourceConfidence);
@@ -87,6 +89,10 @@ export default function App() {
         stage: segment.sourceOccurrence === 1 ? "first" : "subsequent",
         raw: segment.raw
       });
+      if ((segment.sourceOccurrence ?? 1) > 1) {
+        const expected = formatCitation(segment.raw, segment.sourceType, "subsequent");
+        if (expected.correctedText !== segment.raw.trim()) existing.stageIssues += 1;
+      }
       if (segment.occurrence === "first" && existing.firstFootnote === undefined) {
         existing.firstFootnote = Number(segment.id.split("-")[0]);
       }
@@ -210,6 +216,11 @@ export default function App() {
                         <span>{source.count} {source.count === 1 ? "occurrence" : "occurrences"}</span>
                       </div>
                       <small>{source.type} · {Math.round(source.confidence * 100)}% classification confidence{source.firstFootnote !== undefined ? ` · first at FN ${source.firstFootnote}` : ""}{source.footnotes.length ? ` · FNs ${source.footnotes.join(", ")}` : ""}</small>
+                      <div className="source-consistency">
+                        <b>{source.count - 1 > 0 ? Math.round(((source.count - 1 - source.stageIssues) / (source.count - 1)) * 100) : 100}%</b>
+                        <span>subsequent-form consistency</span>
+                        {source.stageIssues > 0 && <em>{source.stageIssues} occurrence{source.stageIssues === 1 ? "" : "s"} need{source.stageIssues === 1 ? "s" : ""} review</em>}
+                      </div>
                       <div className="source-chain">
                         {source.occurrences.map((occurrence, occurrenceIndex) => (
                           <span key={occurrence.footnote + "-" + occurrenceIndex}>
