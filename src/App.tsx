@@ -72,10 +72,14 @@ export default function App() {
         name: segment.components.title ?? segment.raw,
         type: segment.sourceType,
         count: 0,
-        confidence: 0
+        confidence: 0,
+        footnotes: [] as number[]
       };
       existing.count += 1;
       existing.confidence = Math.max(existing.confidence, segment.sourceConfidence);
+      for (const footnote of segment.sourceFootnotes ?? []) {
+        if (!existing.footnotes.includes(footnote)) existing.footnotes.push(footnote);
+      }
       if (segment.occurrence === "first" && existing.firstFootnote === undefined) {
         existing.firstFootnote = Number(segment.id.split("-")[0]);
       }
@@ -198,7 +202,7 @@ export default function App() {
                         <b>{source.name}</b>
                         <span>{source.count} {source.count === 1 ? "occurrence" : "occurrences"}</span>
                       </div>
-                      <small>{source.type} · {Math.round(source.confidence * 100)}% classification confidence{source.firstFootnote !== undefined ? ` · first at FN ${source.firstFootnote}` : ""}</small>
+                      <small>{source.type} · {Math.round(source.confidence * 100)}% classification confidence{source.firstFootnote !== undefined ? ` · first at FN ${source.firstFootnote}` : ""}{source.footnotes.length ? ` · FNs ${source.footnotes.join(", ")}` : ""}</small>
                     </article>
                   ))}
                 </div>
