@@ -131,6 +131,14 @@ export async function saveDocument(input: {
     confidence: number;
     sourceKey?: string;
     occurrenceIndex?: number;
+    findings?: Array<{
+      ruleCode: string;
+      severity: "error"|"warning"|"review";
+      message: string;
+      expected?: string;
+      detected?: string;
+      correction?: string;
+    }>;
   }>;
 }): Promise<PersistedDocument> {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -247,6 +255,26 @@ export async function saveDocument(input: {
       const citationIdByPair = new Map(
         citationRows.map((row, index) => [`${row.footnote_id}|${input.citations[index].segmentNumber}`, row.id as string])
       );
+
+      const validationRows = input.citations.flatMap((citation) => {
+        const footnoteId = footnoteIdByNumber.get(citation.footnoteNumber);
+        const citationId = footnoteId ? citationIdByPair.get(`${footnoteId}|${citation.segmentNumber}`) : undefined;
+        if (!citationId || !citation.findings?.length) return [];
+        return citation.findings.map((finding) => ({
+          citation_id: citationId,
+          rule_code: finding.ruleCode,
+          severity: finding.severity,
+          status: "open",
+          message: finding.message,
+          expected: finding.expected ?? null,
+          detected: finding.detected ?? citation.rawText,
+          correction: finding.correction ?? null
+        }));
+      });
+      if (validationRows.length) {
+        const { error: validationError } = await supabase.from("validation_results").insert(validationRows);
+        if (validationError) throw validationError;
+      }
 
       const occurrenceRows = input.citations.flatMap((citation) => {
         const footnoteId = footnoteIdByNumber.get(citation.footnoteNumber);
