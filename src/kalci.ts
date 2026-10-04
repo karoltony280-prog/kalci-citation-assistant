@@ -180,19 +180,9 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
     if (occurrence === "subsequent") {
       const surname = surnameOf(c.author);
       if (!surname) return null;
-      return {
-        text: surname + ", " + c.title + page + ".",
-        reason: "This source has already appeared. KALCI's subsequent book form uses the author's second name, title and page.",
-        safe: true,
-        stage: "subsequent"
-      };
+      return { text: surname + ", " + c.title + page + ".", reason: "This source has already appeared. KALCI's subsequent book form uses the author's second name, title and page.", safe: true, stage: "subsequent" };
     }
-    return {
-      text: c.author + ", " + c.title + ", " + c.publisher + ", " + c.year + page + ".",
-      reason: "This is the first occurrence of the book source, so KALCI's full book form is used.",
-      safe: true,
-      stage: "first"
-    };
+    return { text: c.author + ", " + c.title + ", " + c.publisher + ", " + c.year + page + ".", reason: "This is the first occurrence of the book source, so KALCI's full book form is used.", safe: true, stage: "first" };
   }
 
   if (sourceType === "DISSERTATION") {
@@ -202,12 +192,7 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
     if (occurrence === "subsequent") {
       const surname = surnameOf(c.author);
       if (!surname) return null;
-      return {
-        text: surname + ", " + c.title + page + ".",
-        reason: "This is a subsequent dissertation/thesis citation; KALCI shortens it to the author's second name, title and page.",
-        safe: true,
-        stage: "subsequent"
-      };
+      return { text: surname + ", " + c.title + page + ".", reason: "This is a subsequent dissertation/thesis citation; KALCI shortens it to the author's second name, title and page.", safe: true, stage: "subsequent" };
     }
     return null;
   }
@@ -220,31 +205,82 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
     const no = c.identifier ? " (" + c.identifier + ")" : c.year && /constitution/i.test(c.title) ? " (" + c.year + ")" : "";
     if (occurrence === "first") {
       if (!no) return null;
-      return {
-        text: c.title + no + refSuffix + ".",
-        reason: "This is the first legislation citation. KALCI retains the Act number/year parenthetical and the section or Article reference.",
-        safe: true,
-        stage: "first"
-      };
+      return { text: c.title + no + refSuffix + ".", reason: "This is the first legislation citation. KALCI retains the Act number/year parenthetical and the section or Article reference.", safe: true, stage: "first" };
     }
-    return {
-      text: c.title + refSuffix + ".",
-      reason: "This legislation has already appeared. KALCI's subsequent form drops the bracketed number/year.",
-      safe: true,
-      stage: "subsequent"
-    };
+    return { text: c.title + refSuffix + ".", reason: "This legislation has already appeared. KALCI's subsequent form drops the bracketed number/year.", safe: true, stage: "subsequent" };
+  }
+
+  const caseTypes = new Set(["KENYAN_CASE","FOREIGN_CASE","EACJ","AFRICAN_COURT","AFRICAN_COMMISSION","ECTHR","ICJ","IACTHR","IACMHR","UN_COMMITTEE"]);
+  if (caseTypes.has(sourceType)) {
+    const c = parseCaseComponents(text);
+    if (!c.title) return null;
+
+    if (sourceType === "FOREIGN_CASE") {
+      if (occurrence === "first") {
+        const withoutPara = text.trim().replace(/\s*,?\s*para\s+[A-Za-z0-9.-]+\s*\.?\s*$/i, "");
+        if (withoutPara && c.title && (c.reporter || /\[\d{4}\]|\(\d{4}\)/.test(withoutPara))) {
+          return { text: removeFinalStop(withoutPara) + ".", reason: "This is the first foreign case citation. KALCI preserves the case name and reporter citation rather than inventing case metadata.", safe: true, stage: "first" };
+        }
+      }
+      if (occurrence === "subsequent") {
+        return { text: c.title + ".", reason: "This foreign case has already appeared. KALCI's subsequent form uses the case name.", safe: true, stage: "subsequent" };
+      }
+      return null;
+    }
+
+    if (sourceType === "KENYAN_CASE") {
+      if (occurrence === "first" && c.caseNumber && c.court && c.year && c.reporter) {
+        const para = c.paragraph ? ", para " + c.paragraph : "";
+        return {
+          text: c.title + ", " + c.caseNumber + ", " + c.court + " (" + c.year + ") " + c.reporter + para + ".",
+          reason: "The case has enough structured metadata for KALCI's first Kenyan case form: case name, case number, court, year, reporter and paragraph where supplied.",
+          safe: true,
+          stage: "first"
+        };
+      }
+      if (occurrence === "subsequent" && c.court && c.year) {
+        const para = c.paragraph ? ", para " + c.paragraph : "";
+        return {
+          text: c.title + ", " + c.court + " (" + c.year + ")" + para + ".",
+          reason: "This Kenyan case has already appeared. KALCI's subsequent form drops the full case number and reporter.",
+          safe: true,
+          stage: "subsequent"
+        };
+      }
+      return null;
+    }
+
+    if (occurrence === "first" && c.status && c.year) {
+      if (sourceType === "EACJ" && c.reporter && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + (c.caseNumber ?? "") + ", EACJ (" + c.year + "), para " + c.paragraph + ".", reason: "The EACJ source contains the stage, year and paragraph needed for the KALCI EACJ template.", safe: Boolean(c.caseNumber), stage: "first" };
+      }
+      if (sourceType === "AFRICAN_COURT" && c.reporter && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + c.reporter + " (" + c.year + "), para " + c.paragraph + ".", reason: "The African Court citation has the case stage, reporter, year and paragraph required by KALCI.", safe: true, stage: "first" };
+      }
+      if (sourceType === "AFRICAN_COMMISSION" && c.caseNumber && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + c.caseNumber + ", ACmHPR (" + c.year + "), para " + c.paragraph + ".", reason: "The African Commission citation has the communication number, decision stage, year and paragraph required by KALCI.", safe: true, stage: "first" };
+      }
+      if (sourceType === "ECTHR" && c.caseNumber && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + c.caseNumber + ", ECtHR (" + c.year + "), para " + c.paragraph + ".", reason: "The ECtHR citation has the application number, stage, year and paragraph required by KALCI.", safe: true, stage: "first" };
+      }
+      if (sourceType === "IACMHR" && c.caseNumber && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + c.caseNumber + ", IACmHR (" + c.year + "), para " + c.paragraph + ".", reason: "The Inter-American Commission citation has the petition number, stage, year and paragraph required by KALCI.", safe: true, stage: "first" };
+      }
+      if (sourceType === "IACTHR" && c.reporter && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + c.reporter + " (" + c.year + "), para " + c.paragraph + ".", reason: "The Inter-American Court citation has its Series C/report identifier, year and paragraph required by KALCI.", safe: true, stage: "first" };
+      }
+      if (sourceType === "UN_COMMITTEE" && c.caseNumber && c.paragraph) {
+        return { text: c.title + " (" + c.status + "), " + c.caseNumber + ", " + (c.reporter ?? "") + " (" + c.year + "), " + c.paragraph + ".", reason: "The UN Committee citation has its communication number, committee, year and paragraph/page reference.", safe: Boolean(c.reporter), stage: "first" };
+      }
+    }
+    return null;
   }
 
   if (BOOK_LIKE.has(sourceType) && occurrence === "subsequent") {
     const c = parseBookLike(text);
     const surname = surnameOf(c.author);
     if (surname && c.title) {
-      return {
-        text: surname + ", " + c.title + (c.page ? ", " + c.page : "") + ".",
-        reason: "The source recurs later in the document, so a shortened author/title form is safer than repeating full publication details.",
-        safe: true,
-        stage: "subsequent"
-      };
+      return { text: surname + ", " + c.title + (c.page ? ", " + c.page : "") + ".", reason: "The source recurs later in the document, so a shortened author/title form is safer than repeating full publication details.", safe: true, stage: "subsequent" };
     }
   }
 
@@ -368,17 +404,36 @@ function parseDate(raw: string): string | undefined {
 function parseCaseComponents(raw: string): SourceComponents {
   const components: SourceComponents = {};
   const clean = raw.replace(/[.!?]$/, "").trim();
-  const versus = clean.match(/^(.+?\s+v(?:s|ersus)?\.?\s+.+?)(?:,\s+(.+))?$/i);
-  if (versus) {
-    components.title = versus[1].trim();
-    const tail = versus[2] ?? "";
-    components.caseNumber = tail.match(/\b(?:Civil|Constitutional|Petition|Appeal|Application|Reference|Criminal)\s+(?:Case|Appeal|Petition|Application|Reference)?\s*\d+\s+of\s+\d{4}\b/i)?.[0];
-    components.reporter = clean.match(/\b(?:eKLR|KLR|EA|AfCLR|ACmHPR|EACJ|ECtHR|ICJ Reports|IACtHR|IACmHR)\b/i)?.[0];
-    components.paragraph = clean.match(/\bpara\s+([A-Za-z0-9.-]+)/i)?.[1];
-    const year = clean.match(/\b(?:19|20)\d{2}\b/)?.[0];
-    if (year) components.year = year;
-    return components;
+
+  const para = clean.match(/\bpara\s+([A-Za-z0-9.-]+)/i);
+  if (para) components.paragraph = para[1];
+
+  const reporter = clean.match(/\b(?:eKLR|KLR|EA|AfCLR|ACmHPR|EACJ|ECtHR|ICJ Reports|IACtHR|IACmHR)\b/i);
+  if (reporter) components.reporter = reporter[0];
+
+  const year = clean.match(/\b(?:19|20)\d{2}\b/)?.[0];
+  if (year) components.year = year;
+
+  const versus = clean.match(/^(.+?\s+v(?:s|versus)?\.?\s+.+?)(?=,\s+(?:Civil|Constitutional|Petition|Appeal|Application|Reference|Criminal)\b|,\s+(?:decision|ruling|judgment|order)\b|,\s+\d+\s+(?:AfCLR|EACJ)\b|,\s+\w+\s+\(\d{4}\))/i);
+  if (versus) components.title = versus[1].trim();
+
+  if (!components.title) {
+    const comma = clean.indexOf(",");
+    components.title = comma > 0 ? clean.slice(0, comma).trim() : clean.split(/\s+(?:\(|,)\s*/)[0].trim();
   }
+
+  const caseNumber = clean.match(/\b(?:Civil|Constitutional|Petition|Appeal|Application|Reference|Criminal)\s+(?:Case\s+|Appeal\s+|Petition\s+|Application\s+|Reference\s+)?\d+\s+of\s+\d{4}\b/i)
+    ?? clean.match(/\b\d+\s+of\s+\d{4}\b(?=\s*,|\s+\()/i);
+  if (caseNumber) components.caseNumber = caseNumber[0];
+
+  const stage = clean.match(/\(([^()]{3,80})\)/)?.[1];
+  if (stage && /(merits|jurisdiction|admissibility|ruling|judgment|decision|award|order)/i.test(stage)) components.status = stage;
+
+  const court = clean.match(/,\s*([^,()]+?)\s*\((?:19|20)\d{2}\)\s*(?:eKLR|KLR|EA)\b/i);
+  if (court) components.court = court[1].trim();
+
+  if (/^case of /i.test(components.title ?? "")) components.title = (components.title ?? "").replace(/^case of\s+/i, "");
+
   return components;
 }
 
