@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { analyzeFootnotes, KALCI_RULES, type CitationResult } from "./kalci";
+import { analyzeFootnotes, KALCI_RULES, type CitationResult, type KalciTemplateDefinition } from "./kalci";
 import { extractDocxFootnotesFromFile } from "./docx";
 import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate } from "./supabase";
 
@@ -43,17 +43,26 @@ export default function App() {
     return { total: results.length, errors, warnings, review, clean, score, sources: sources.size };
   }, [results]);
 
+  const engineTemplates = useMemo<KalciTemplateDefinition[]>(
+    () => templates.map((template) => ({
+      sourceType: sourceTypes.find((source) => source.id === template.source_type_id)?.code ?? "",
+      citationStage: template.citation_stage,
+      templateText: template.template_text
+    })).filter((template) => Boolean(template.sourceType)),
+    [sourceTypes, templates]
+  );
+
   const selectedSource = sourceTypes.find((source) => source.code === selectedType);
   const selectedTemplates = templates.filter((template) => template.source_type_id === selectedSource?.id);
 
   function runCheck() {
-    setResults(analyzeFootnotes(value.split(/\r?\n/)));
+    setResults(analyzeFootnotes(value.split(/\r?\n/), engineTemplates));
   }
 
   function applyAll() {
     const corrected = results.map((r) => r.correctedText).join("\n");
     setValue(corrected);
-    setResults(analyzeFootnotes(corrected.split(/\r?\n/)));
+    setResults(analyzeFootnotes(corrected.split(/\r?\n/), engineTemplates));
   }
 
   async function importDocx(file: File) {
@@ -63,7 +72,7 @@ export default function App() {
       if (!footnotes.length) throw new Error("No numbered footnotes were found in this Word document.");
       const imported = footnotes.map((item) => item.raw);
       setValue(imported.join("\n"));
-      setResults(analyzeFootnotes(imported));
+      setResults(analyzeFootnotes(imported, engineTemplates));
       setDocumentName(file.name);
       setActive("checker");
     } catch (error) {
@@ -119,7 +128,7 @@ export default function App() {
               <div className="import-actions">
                 <input ref={fileInput} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(e) => e.target.files?.[0] && importDocx(e.target.files[0])} />
                 <button className="secondary" disabled={importing} onClick={() => fileInput.current?.click()}>{importing ? "Reading Word document…" : "Import .docx"}</button>
-                <button className="ghost" onClick={() => { setDocumentName(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE)); }}>Load sample</button>
+                <button className="ghost" onClick={() => { setDocumentName(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE, engineTemplates)); }}>Load sample</button>
               </div>
             </section>
 
