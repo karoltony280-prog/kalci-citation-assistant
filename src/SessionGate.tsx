@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import App from "./App";
 import { getCurrentSession, onAuthStateChange, signIn, signUp } from "./supabase";
+import { KALCI_LOGO } from "./kalciLogo";
 
 export default function SessionGate() {
   const [ready, setReady] = useState(false);
@@ -59,7 +60,7 @@ export default function SessionGate() {
   return (
     <div className="auth-shell">
       <section className="auth-card">
-        <div className="crest">K</div>
+        <img className="auth-logo" src={KALCI_LOGO} alt="KALCI Citation Generator" />
         <span className="eyebrow">KALCI DOCUMENT MEMORY</span>
         <h1>{mode === "signin" ? "Sign in to KALCI." : "Create your KALCI account."}</h1>
         <p className="lead">Your account will let KALCI save analysed documents, source identities and citation histories.</p>
