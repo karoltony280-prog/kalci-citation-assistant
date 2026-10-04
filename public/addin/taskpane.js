@@ -1,4 +1,4 @@
-const state = { findings: [], footnotes: [] };
+const state = { findings: [], footnotes: [], sources: [] };
 
 async function scan() {
   const status = document.getElementById("status");
@@ -42,9 +42,11 @@ async function scan() {
       if (response && response.ok) {
         const analysis = await response.json();
         state.findings = analysis.results;
+        state.sources = analysis.sources || [];
         status.textContent = `KALCI scanned ${analysis.statistics.total} footnotes · ${analysis.statistics.errors} errors · ${analysis.statistics.warnings} warnings · ${analysis.statistics.requiresReview} reviews.`;
       } else {
         state.findings = payload.map((item) => localAnalyse(item.raw, item.footnoteNumber));
+        state.sources = [];
         status.textContent = "KALCI server analysis unavailable; local checks are being used.";
       }
 
@@ -137,6 +139,14 @@ function renderStats() {
 
 function render() {
   const host = document.getElementById("findings");
+  const ledger = document.getElementById("sources");
+  if (ledger) {
+    ledger.innerHTML = state.sources.length
+      ? `<div class="ledger-title">Source chain</div>` + state.sources.map((source) =>
+          `<div class="source-row"><b>${escapeHtml(source.name || source.key)}</b><span>${escapeHtml(source.type || "other")}</span><small>${source.occurrenceCount || source.occurrences?.length || 0} occurrence${(source.occurrenceCount || source.occurrences?.length || 0) === 1 ? "" : "s"} · ${Math.round((source.confidence || 0) * 100)}% confidence · FNs ${(source.occurrences || []).map((item) => item.footnote).join(", ")}</small></div>`
+        ).join("")
+      : "";
+  }
   host.innerHTML = state.findings.map((f, index) => {
     const type = f.sourceType || "other";
     const occurrence = f.occurrence || "unknown";
@@ -223,6 +233,12 @@ async function selectOne(index) {
   }
 }
 
+function clearSourceLedger() {
+  state.sources = [];
+  const ledger = document.getElementById("sources");
+  if (ledger) ledger.innerHTML = "";
+}
+
 async function clearMarks() {
   try {
     await Word.run(async (context) => {
@@ -235,6 +251,7 @@ async function clearMarks() {
         range.font.underline = "None";
       });
       await context.sync();
+      clearSourceLedger();
       document.getElementById("status").textContent = "KALCI markings cleared.";
     });
   } catch (error) {
