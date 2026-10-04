@@ -439,10 +439,17 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     for (const key of matchKeys) registry.set(key, citationNumber);
   }
 
-  if (occurrence === "subsequent" && sourceType === "BOOK")
-    add("KALCI-BOOK-002", "This appears to be a subsequent book citation. KALCI requires the author's second name in subsequent mention.", "KALCI Guide, books — subsequent mention", "review", "Review the shortened subsequent form for this source.");
+  const correction = formatCitation(text, sourceType, occurrence);
 
-  const correctedText = tidyText(text);
+  if (occurrence === "subsequent" && sourceType === "BOOK") {
+    add(
+      "KALCI-BOOK-002",
+      "This appears to be a subsequent book citation. KALCI requires the author's second name in subsequent mention.",
+      "KALCI Guide, books — subsequent mention",
+      "review",
+      correction.correctedText
+    );
+  }
 
   const requiredByType: Record<string, string[]> = {
     BOOK: ["author", "title", "publisher", "year"],
@@ -464,7 +471,8 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
         rule: `KALCI template — ${SOURCE_TYPE_NAMES[sourceType] ?? sourceType}`,
         severity: "review",
         original: text,
-        suggestion: "Confirm the source-specific template before applying a structural correction."
+        suggestion: "Confirm the source-specific template before applying a structural correction.",
+        safeToApply: false
       });
     }
   }
@@ -511,7 +519,24 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     if (pattern.test(text)) findings.push({ code, message, rule, severity, original: text });
   }
 
-  return { id: segmentId, raw: text, sourceType, occurrence, sourceKey, components, findings, correctedText };
+  for (const finding of findings) {
+    if (!finding.suggestion && correction.correctedText !== text) finding.suggestion = correction.correctedText;
+    if (correction.edits.length && finding.suggestion === correction.correctedText) finding.safeToApply = correction.safe;
+  }
+
+  return {
+    id: segmentId,
+    raw: text,
+    sourceType,
+    occurrence,
+    sourceKey,
+    components,
+    findings,
+    correctedText: correction.correctedText,
+    edits: correction.edits,
+    correctionReason: correction.reason,
+    correctionStage: correction.stage
+  };
 }
 
 export function analyzeFootnotes(raw: string[]): CitationResult[] {
