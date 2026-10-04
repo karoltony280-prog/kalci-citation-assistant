@@ -190,6 +190,17 @@ export default function App() {
                         {r.segments[0].correctionReason && <em>{r.segments[0].correctionReason}</em>}
                       </div>
                     )}
+                    {r.segments.length === 1 && Object.keys(r.components).some((key) => Boolean((r.components as Record<string, unknown>)[key])) && (
+                      <details className="source-details">
+                        <summary>Parsed source components</summary>
+                        <div className="component-grid">
+                          {Object.entries(r.components).filter(([, value]) => Boolean(value)).map(([key, value]) => (
+                            <div key={key}><span>{key}</span><b>{String(value)}</b></div>
+                          ))}
+                        </div>
+                        {r.segments[0].templateText && <small className="template-note">KALCI template: {r.segments[0].templateText}</small>}
+                      </details>
+                    )}
                     {r.findings.length === 0 ? (
                       <div className="ok">✓ No flagged KALCI issue</div>
                     ) : (
