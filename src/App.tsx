@@ -112,10 +112,40 @@ export default function App() {
     setResults(analyzeFootnotes(value.split(/\r?\n/), engineTemplates));
   }
 
+  function findingKey(footnote: number, code: string) {
+    return `${footnote}|${code}`;
+  }
+
+  function applyFinding(footnote: number, original: string, correction: string, code: string) {
+    if (!original || !correction || original === correction) return;
+    const lines = value.split(/\r?\n/);
+    const lineIndex = results.findIndex((result) => result.number === footnote);
+    if (lineIndex < 0) return;
+    const position = lines[lineIndex]?.indexOf(original) ?? -1;
+    if (position < 0) {
+      window.alert(`KALCI could not locate the exact citation text for FN ${footnote}. No replacement was made.`);
+      return;
+    }
+    lines[lineIndex] = lines[lineIndex].slice(0, position) + correction + lines[lineIndex].slice(position + original.length);
+    const nextValue = lines.join("\n");
+    setValue(nextValue);
+    setResults(analyzeFootnotes(nextValue.split(/\r?\n/), engineTemplates));
+    setDismissedFindings((current) => {
+      const next = new Set(current);
+      next.delete(findingKey(footnote, code));
+      return next;
+    });
+  }
+
+  function dismissFinding(key: string) {
+    setDismissedFindings((current) => new Set(current).add(key));
+  }
+
   function applyAll() {
     const corrected = results.map((r) => r.correctedText).join("\n");
     setValue(corrected);
     setResults(analyzeFootnotes(corrected.split(/\r?\n/), engineTemplates));
+    setDismissedFindings(new Set());
   }
 
   async function importDocx(file: File) {
