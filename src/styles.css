@@ -147,3 +147,6 @@ button:disabled{opacity:.55;cursor:not-allowed}
 @media (max-width:700px){.version-row{align-items:flex-start;flex-direction:column}.version-row>span{white-space:normal}.comparison-title{display:block}.comparison-title span{display:block;margin-top:4px}}
 
 .rule-content{min-width:0;flex:1}.finding-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:7px}.tiny{font-size:9px!important;padding:5px 8px!important}.rule-row.dismissed{opacity:.65}.rule-row.dismissed .rule-content{font-style:italic}
+
+.brand-logo{display:block;width:172px;height:58px;object-fit:contain;object-position:center;border-radius:8px}.brand{min-width:172px}
+@media (max-width:700px){.brand-logo{width:138px;height:48px}.brand{min-width:138px}}
