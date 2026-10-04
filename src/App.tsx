@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeFootnotes, formatCitation, KALCI_RULES, type CitationResult, type KalciTemplateDefinition } from "./kalci";
-import { extractDocxFootnotesFromFile } from "./docx";
+import { extractDocxFootnotesFromFile, inspectDocxFormattingFromFile, type DocxFormatAudit } from "./docx";
 import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate, type PersistedDocumentData } from "./supabase";
 import DocumentVault from "./DocumentVault";
 import AuditSummary from "./AuditSummary";
+import FormatAudit from "./FormatAudit";
 
 const SAMPLE = [
   "FX Njenga, International Law and World Order Problems, Moi University Press, 2001, p 21",
@@ -20,6 +21,7 @@ export default function App() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [documentName, setDocumentName] = useState<string | null>(null);
   const [documentId, setDocumentId] = useState<string | null>(null);
+  const [formatAudit, setFormatAudit] = useState<DocxFormatAudit | null>(null);
   const [importing, setImporting] = useState(false);
   const [sourceTypes, setSourceTypes] = useState<KalciSourceType[]>([]);
   const [templates, setTemplates] = useState<KalciTemplate[]>([]);
@@ -116,13 +118,17 @@ export default function App() {
   async function importDocx(file: File) {
     setImporting(true);
     try {
-      const footnotes = await extractDocxFootnotesFromFile(file);
+      const [footnotes, audit] = await Promise.all([
+        extractDocxFootnotesFromFile(file),
+        inspectDocxFormattingFromFile(file)
+      ]);
       if (!footnotes.length) throw new Error("No numbered footnotes were found in this Word document.");
       const imported = footnotes.map((item) => item.raw);
       setValue(imported.join("\n"));
       setResults(analyzeFootnotes(imported, engineTemplates));
       setDocumentName(file.name);
       setDocumentId(null);
+      setFormatAudit(audit);
       setActive("checker");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
@@ -192,7 +198,7 @@ export default function App() {
               <div className="import-actions">
                 <input ref={fileInput} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(e) => e.target.files?.[0] && importDocx(e.target.files[0])} />
                 <button className="secondary" disabled={importing} onClick={() => fileInput.current?.click()}>{importing ? "Reading Word document…" : "Import .docx"}</button>
-                <button className="ghost" onClick={() => { setDocumentId(null); setDocumentName(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE, engineTemplates)); }}>Load sample</button>
+                <button className="ghost" onClick={() => { setDocumentId(null); setDocumentName(null); setFormatAudit(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE, engineTemplates)); }}>Load sample</button>
               </div>
             </section>
 
@@ -204,6 +210,7 @@ export default function App() {
             </section>
 
             <AuditSummary results={results} />
+            <FormatAudit audit={formatAudit} />
 
             {sourceLedger.length > 0 && (
               <section className="source-ledger">
