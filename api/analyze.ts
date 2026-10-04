@@ -75,17 +75,38 @@ export default async function handler(request: Request): Promise<Response> {
     return Response.json({
       style: { name: "KALCI", version: "February 2026" },
       statistics: { total, correct, errors, warnings, requiresReview: review, safeCorrections, score },
-      sources: Array.from(new Map(
+      sources: Array.from(
         results.flatMap((r) => r.segments)
           .filter((s) => s.sourceKey)
-          .map((s) => [s.sourceKey, {
-            key: s.sourceKey,
-            name: s.components.title ?? s.raw,
-            type: s.sourceType,
-            occurrence: s.occurrence,
-            firstCitation: s.occurrence === "first" ? s.id : undefined
-          }])
-      ).values()),
+          .reduce((map, segment) => {
+            const key = segment.sourceKey as string;
+            const existing = map.get(key) ?? {
+              key,
+              name: segment.components.title ?? segment.raw,
+              type: segment.sourceType,
+              firstCitation: undefined as string | undefined,
+              occurrences: [] as Array<{ footnote: number; occurrence: string; id: string }>,
+              confidence: segment.sourceConfidence
+            };
+            existing.occurrences.push({
+              footnote: Number(segment.id.split("-")[0]),
+              occurrence: segment.occurrence,
+              id: segment.id
+            });
+            if (segment.occurrence === "first" && !existing.firstCitation) existing.firstCitation = segment.id;
+            existing.confidence = Math.max(existing.confidence, segment.sourceConfidence);
+            map.set(key, existing);
+            return map;
+          }, new Map<string, {
+            key: string;
+            name: string;
+            type: string;
+            firstCitation?: string;
+            occurrences: Array<{ footnote: number; occurrence: string; id: string }>;
+            confidence: number;
+          }>())
+          .values()
+      ).map((source) => ({ ...source, occurrenceCount: source.occurrences.length })),
       results
     }, { headers: { "access-control-allow-origin": "*" } });
   } catch (error) {
