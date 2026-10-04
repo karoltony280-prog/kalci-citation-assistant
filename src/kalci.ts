@@ -788,6 +788,10 @@ function attachSourceChains(results: CitationResult[]): CitationResult[] {
     });
   }
 
+  for (const result of results) {
+    result.findings = result.segments.flatMap((segment) => segment.findings);
+  }
+
   return results;
 }
 
