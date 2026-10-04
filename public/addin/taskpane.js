@@ -1,65 +1,9 @@
 const state = { findings: [], footnotes: [] };
 
-const rules = [
-  [/\bet\s+al\.?\b/i, "Avoid Latinisms; use “and others”.", "KALCI Guide, language and style"],
-  [/\b(?:inter\s+alia|prima\s+facie|per\s+se)\b/i, "Replace the Latin expression with plain-English wording.", "KALCI Guide, language and style"],
-  [/\b[A-Z]\.\s*[A-Z]\.\b/, "Initials should not contain full stops.", "KALCI Guide, abbreviations"],
-  [/\bp\.?\s+\d+/i, "Page numbers should appear without “p”.", "KALCI Guide, page numbers"],
-  [/&/, "Use “and” rather than “&” where KALCI calls for words.", "KALCI Guide, symbols"],
-  [/\//, "Avoid slash constructions where words are appropriate.", "KALCI Guide, symbols"]
-];
-
-function sourceType(text) {
-  if (/\b(?:v\.|versus)\b|\[?\d{4}\]?\s*(?:eKLR|KLR|EA)\b/i.test(text)) return "case";
-  if (/\b(?:Act|Bill|Regulations?|Rules?|Constitution)\b/i.test(text)) return "legislation";
-  if (/https?:\/\//i.test(text)) return "internet resource";
-  if (/\b(?:Journal|Law Review|Review)\b/i.test(text)) return "journal article";
-  return "book / other";
-}
-
-function fingerprint(text, type) {
-  const clean = text.toLowerCase().replace(/https?:\/\/\S+/g, "").replace(/[“”"]/g, "").replace(/\s+/g, " ").trim();
-  if (!clean) return null;
-  const parts = clean.split(",");
-  if (type === "case") return "case|" + clean.slice(0, 120);
-  if (type === "legislation") return "legislation|" + clean.match(/[a-z][a-z &'’-]{2,80}\b(?:act|bill|regulations?|rules?|constitution)\b(?:\s*\d{4})?/i)?.[0] || clean.slice(0, 100);
-  return type + "|" + parts.slice(0,2).join("|").replace(/[^a-z0-9 ]/gi,"").trim();
-}
-
-function corrected(text) {
-  return text.trim()
-    .replace(/\b([A-Z])\.\s*([A-Z])\.\b/g, "$1$2")
-    .replace(/\bet\s+al\.?\b/gi, "and others")
-    .replace(/\binter\s+alia\b/gi, "among other things")
-    .replace(/\bprima\s+facie\b/gi, "at first instance")
-    .replace(/\bper\s+se\b/gi, "in itself")
-    .replace(/\s+&\s+/g, " and ")
-    .replace(/\s*\/\s*/g, " or ")
-    .replace(/\bp\.?\s+(?=\d)/gi, "")
-    .replace(/\s+([,.;:])/g, "$1")
-    .replace(/[.!?]$/.test(text.trim()) ? /$^/ : /$/g, (m) => m)
-    .replace(/\s+/g, " ")
-    .trim() + (/[^.!?]$/.test(text.trim()) ? "." : "");
-}
-
-function analyse(text, number, registry) {
-  const type = sourceType(text);
-  const key = fingerprint(text, type);
-  const findings = [];
-  rules.forEach(([re, message, rule]) => { if (re.test(text)) findings.push({message, rule}); });
-  if (!/[.!?]$/.test(text.trim())) findings.push({message:"The citation should end with a full stop.", rule:"KALCI Guide, punctuation"});
-  const occurrence = key ? (registry.has(key) ? "subsequent" : "first") : "unknown";
-  if (key && !registry.has(key)) registry.set(key, number);
-  return {number, text, type, occurrence, findings, corrected: corrected(text)};
-}
-
 async function scan() {
   const status = document.getElementById("status");
-  const findingsHost = document.getElementById("findings");
-  const statsHost = document.getElementById("stats");
-  state.findings = [];
-  state.footnotes = [];
   status.textContent = "Reading the document footnotes…";
+
   try {
     await Word.run(async (context) => {
       const collection = context.document.body.footnotes;
@@ -69,76 +13,182 @@ async function scan() {
       collection.items.forEach((item) => item.body.load("text"));
       await context.sync();
 
-      const registry = new Map();
-      collection.items.forEach((item, index) => {
-        const text = (item.body.text || "").trim();
-        if (text) state.findings.push(analyse(text, index + 1, registry));
-        state.footnotes.push(item);
-      });
+      const payload = collection.items.map((item, index) => ({
+        footnoteNumber: index + 1,
+        raw: (item.body.text || "").trim()
+      })).filter((item) => item.raw);
 
-      const issueCount = state.findings.filter((x) => x.findings.length).length;
-      const errorCount = state.findings.reduce((n,x) => n + x.findings.length, 0);
+      if (!payload.length) {
+        state.findings = [];
+        state.footnotes = collection.items;
+        render();
+        status.textContent = "No footnotes were found in this document.";
+        return;
+      }
 
-      await markIssues(context);
-      status.textContent = `Scanned ${state.findings.length} footnotes. ${issueCount} require attention.`;
-      statsHost.innerHTML = `<div><b>${state.findings.length}</b><span>footnotes</span></div><div><b>${issueCount}</b><span>issues</span></div><div><b>${errorCount}</b><span>findings</span></div>`;
-      renderFindings(findingsHost);
+      state.footnotes = collection.items;
+
+      let response;
+      try {
+        response = await fetch("/api/analyze", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ footnotes: payload })
+        });
+      } catch (_) {
+        response = null;
+      }
+
+      if (response && response.ok) {
+        const analysis = await response.json();
+        state.findings = analysis.results;
+        status.textContent = `KALCI scanned ${analysis.statistics.total} footnotes · ${analysis.statistics.errors} errors · ${analysis.statistics.warnings} warnings · ${analysis.statistics.requiresReview} reviews.`;
+      } else {
+        state.findings = payload.map((item) => localAnalyse(item.raw, item.footnoteNumber));
+        status.textContent = "KALCI server analysis unavailable; local checks are being used.";
+      }
+
+      renderStats();
+      render();
+      markIssues(context);
+      await context.sync();
     });
   } catch (error) {
-    status.textContent = "KALCI could not access Word footnotes: " + (error && error.message ? error.message : String(error));
+    status.textContent = "KALCI could not access Word footnotes: " + (error?.message || String(error));
   }
 }
 
-async function markIssues(context) {
+function localAnalyse(text, number) {
+  const findings = [];
+  if (/\bet\s+al\.?\b/i.test(text)) findings.push({
+    message: "Avoid Latinisms; use “and others”.",
+    rule: "KALCI Guide, language and style",
+    severity: "error"
+  });
+  if (/\b(?:inter\s+alia|prima\s+facie|per\s+se)\b/i.test(text)) findings.push({
+    message: "Replace the Latin expression with plain-English wording.",
+    rule: "KALCI Guide, language and style",
+    severity: "error"
+  });
+  if (/\b[A-Z]\.\s*[A-Z]\.\b/.test(text)) findings.push({
+    message: "Initials should not contain full stops.",
+    rule: "KALCI Guide, abbreviations",
+    severity: "error"
+  });
+  if (/\bp\.?\s+\d+/i.test(text)) findings.push({
+    message: "Do not use “p” before a page number.",
+    rule: "KALCI Guide, page numbers",
+    severity: "error"
+  });
+  if (/[&]/.test(text)) findings.push({
+    message: "Use “and” rather than “&” where appropriate.",
+    rule: "KALCI Guide, symbols",
+    severity: "warning"
+  });
+  if (/\//.test(text)) findings.push({
+    message: "Avoid slash constructions where words are appropriate.",
+    rule: "KALCI Guide, symbols",
+    severity: "warning"
+  });
+  if (!/[.!?]$/.test(text.trim())) findings.push({
+    message: "The citation should end with a full stop.",
+    rule: "KALCI Guide, punctuation",
+    severity: "error"
+  });
+
+  let corrected = text.trim()
+    .replace(/\b([A-Z])\.\s*([A-Z])\.\b/g, "$1$2")
+    .replace(/\bet\s+al\.?\b/gi, "and others")
+    .replace(/\binter\s+alia\b/gi, "among other things")
+    .replace(/\bprima\s+facie\b/gi, "at first instance")
+    .replace(/\bper\s+se\b/gi, "in itself")
+    .replace(/\s+&\s+/g, " and ")
+    .replace(/\s*\/\s*/g, " or ")
+    .replace(/\bp\.?\s+(?=\d)/gi, "")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!/[.!?]$/.test(corrected)) corrected += ".";
+
+  return {
+    number, text, sourceType: "other", occurrence: "unknown",
+    findings, correctedText: corrected, segments: []
+  };
+}
+
+function markIssues(context) {
   state.footnotes.forEach((item, index) => {
     const finding = state.findings.find((x) => x.number === index + 1);
-    if (!finding) return;
     const range = item.body.getRange();
-    range.font.color = finding.findings.length ? "#9b2525" : "#222222";
-    range.font.underline = finding.findings.length ? "Single" : "None";
+    range.font.color = finding?.findings?.length ? "#9b2525" : "#222222";
+    range.font.underline = finding?.findings?.length ? "Single" : "None";
   });
-  await context.sync();
 }
 
-async function clearMarks() {
-  try {
-    await Word.run(async (context) => {
-      const collection = context.document.body.footnotes;
-      collection.load("items");
-      await context.sync();
-      collection.items.forEach((item) => { const range = item.body.getRange(); range.font.color = "#222222"; range.font.underline = "None"; });
-      await context.sync();
-      document.getElementById("status").textContent = "KALCI markings cleared.";
-    });
-  } catch (error) {
-    document.getElementById("status").textContent = "Could not clear markings: " + (error?.message || error);
-  }
+function renderStats() {
+  const total = state.findings.length;
+  const issues = state.findings.filter((x) => x.findings?.length).length;
+  const errors = state.findings.filter((x) => x.findings?.some((f) => f.severity === "error")).length;
+  document.getElementById("stats").innerHTML =
+    `<div><b>${total}</b><span>footnotes</span></div>
+     <div><b>${issues}</b><span>issues</span></div>
+     <div><b>${errors}</b><span>errors</span></div>`;
 }
 
-function renderFindings(host) {
-  host.innerHTML = state.findings.map((f, i) => {
-    const issues = f.findings.length ? f.findings.map(x => `<div class="issue"><b>${escapeHtml(x.message)}</b><small>${escapeHtml(x.rule)}</small></div>`).join("") : '<div style="color:#3b7650;font-size:11px">✓ No flagged issue</div>';
-    const action = f.findings.length && f.corrected !== f.text ? `<div class="actions"><button class="apply" onclick="applyOne(${i})">Apply correction</button><button onclick="selectOne(${i})">Go to footnote</button></div><div class="suggest">Suggested: ${escapeHtml(f.corrected)}</div>` : "";
-    return `<div class="finding"><div class="top"><span class="num">FN ${f.number}</span><span class="pill">${escapeHtml(f.type)}</span><span class="pill">${escapeHtml(f.occurrence)}</span></div><div class="citation">${escapeHtml(f.text)}</div>${issues}${action}</div>`;
+function render() {
+  const host = document.getElementById("findings");
+  host.innerHTML = state.findings.map((f, index) => {
+    const type = f.sourceType || "other";
+    const occurrence = f.occurrence || "unknown";
+    const corrected = f.correctedText || f.corrected || f.text;
+    const issues = f.findings?.length
+      ? f.findings.map((issue) =>
+          `<div class="issue"><b>${escapeHtml(issue.message)}</b><small>${escapeHtml(issue.code ? issue.code + " · " + issue.rule : issue.rule)}</small></div>`
+        ).join("")
+      : '<div style="color:#3b7650;font-size:11px">✓ No flagged KALCI issue</div>';
+
+    const actions = f.findings?.length && corrected !== f.text
+      ? `<div class="actions">
+          <button class="apply" onclick="applyOne(${index})">Apply correction</button>
+          <button onclick="selectOne(${index})">Go to footnote</button>
+        </div>
+        <div class="suggest">Suggested: ${escapeHtml(corrected)}</div>`
+      : `<div class="actions"><button onclick="selectOne(${index})">Go to footnote</button></div>`;
+
+    const segments = f.segments?.length > 1
+      ? `<div class="suggest">Compound footnote: ${f.segments.length} citations tracked separately.</div>`
+      : "";
+
+    return `<div class="finding">
+      <div class="top"><span class="num">FN ${f.number}</span><span class="pill">${escapeHtml(type)}</span><span class="pill">${escapeHtml(occurrence)}</span></div>
+      <div class="citation">${escapeHtml(f.text)}</div>
+      ${segments}
+      ${issues}
+      ${actions}
+    </div>`;
   }).join("");
 }
 
 function escapeHtml(value) {
-  return value.replace(/[&<>"']/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  return String(value).replace(/[&<>"']/g, (c) =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#039;" })[c]
+  );
 }
 
 async function applyOne(index) {
   const finding = state.findings[index];
-  if (!finding) return;
+  const replacement = finding?.correctedText || finding?.corrected;
+  if (!finding || !replacement || replacement === finding.text) return;
+
   try {
     await Word.run(async (context) => {
       const item = context.document.body.footnotes.items[finding.number - 1];
-      item.body.insertText(finding.corrected, "Replace");
+      item.body.insertText(replacement, "Replace");
       await context.sync();
     });
     await scan();
   } catch (error) {
-    document.getElementById("status").textContent = "Could not apply correction: " + (error?.message || error);
+    document.getElementById("status").textContent = "Could not apply correction: " + (error?.message || String(error));
   }
 }
 
@@ -147,18 +197,42 @@ async function selectOne(index) {
   if (!finding) return;
   try {
     await Word.run(async (context) => {
-      const item = context.document.body.footnotes.items[finding.number - 1];
-      item.reference.select();
+      context.document.body.footnotes.items[finding.number - 1].reference.select();
       await context.sync();
     });
   } catch (error) {
-    document.getElementById("status").textContent = "Could not navigate to footnote: " + (error?.message || error);
+    document.getElementById("status").textContent = "Could not navigate to footnote: " + (error?.message || String(error));
+  }
+}
+
+async function clearMarks() {
+  try {
+    await Word.run(async (context) => {
+      const collection = context.document.body.footnotes;
+      collection.load("items");
+      await context.sync();
+      collection.items.forEach((item) => {
+        const range = item.body.getRange();
+        range.font.color = "#222222";
+        range.font.underline = "None";
+      });
+      await context.sync();
+      document.getElementById("status").textContent = "KALCI markings cleared.";
+    });
+  } catch (error) {
+    document.getElementById("status").textContent = "Could not clear markings: " + (error?.message || String(error));
   }
 }
 
 document.getElementById("scan").addEventListener("click", scan);
 document.getElementById("clear").addEventListener("click", clearMarks);
-if (window.Office) Office.onReady(() => { document.getElementById("status").textContent = "Ready. Click “Scan footnotes”."; });
-else document.getElementById("status").textContent = "Open this page inside Microsoft Word to use document scanning.";
 window.applyOne = applyOne;
 window.selectOne = selectOne;
+
+if (window.Office) {
+  Office.onReady(() => {
+    document.getElementById("status").textContent = "Ready. Click “Scan footnotes”.";
+  });
+} else {
+  document.getElementById("status").textContent = "Open this page inside Microsoft Word to use document scanning.";
+}
