@@ -115,23 +115,15 @@ const SOURCE_TYPE_NAMES: Record<string, string> = {
 
 const BOOK_LIKE = new Set(["BOOK","DISSERTATION","INTERNET_RESOURCE"]);
 
-function lastNonEmpty(values: string[]): string | undefined {
-  return [...values].reverse().find((value) => value.trim().length > 0)?.trim();
-}
-
 function extractPage(text: string): string | undefined {
-  const match = text.match(/(?:^|,\\s*)(?:p\\.?\\s*)?(\\d{1,5})(?:\\s*[-–]\\s*(\\d{1,5}))?\\s*\\.?$/i);
-  return match ? (match[2] ? `${match[1]}–${match[2]}` : match[1]) : undefined;
-}
-
-function extractSection(text: string): string | undefined {
-  return text.match(/\\b(?:Section|Article|para)\\s+([\\w.-]+(?:\\s*[-–]\\s*[\\w.-]+)?)/i)?.[1];
+  const match = text.match(/(?:^|,\s*)(?:p\.?\s*)?(\d{1,5})(?:\s*[-–]\s*(\d{1,5}))?\s*\.?$/i);
+  return match ? (match[2] ? match[1] + "–" + match[2] : match[1]) : undefined;
 }
 
 function surnameOf(author?: string): string | undefined {
   if (!author) return undefined;
   const cleaned = author.trim().replace(/[.]+/g, "");
-  const words = cleaned.split(/\\s+/).filter(Boolean);
+  const words = cleaned.split(/\s+/).filter(Boolean);
   return words.at(-1);
 }
 
@@ -144,7 +136,7 @@ function parseBookLike(text: string): SourceComponents {
   const components: SourceComponents = {};
   components.author = parts[0];
   components.title = parts[1];
-  const yearIndex = parts.findIndex((part) => /^(?:19|20)\\d{2}$/.test(part));
+  const yearIndex = parts.findIndex((part) => /^(?:19|20)\d{2}$/.test(part));
   if (yearIndex >= 0) components.year = parts[yearIndex];
   if (yearIndex > 1) components.publisher = parts[yearIndex - 1];
   components.page = extractPage(text);
@@ -154,22 +146,18 @@ function parseBookLike(text: string): SourceComponents {
 function parseLegislation(text: string): SourceComponents {
   const cleaned = text.replace(/[.!?]$/, "").trim();
   const components: SourceComponents = {};
-  const parenthetical = cleaned.match(/\\((?:No\\.?\\s*\\d+\\s+of\\s+\\d{4}|\\d{4})\\)/i)?.[0];
-  const head = cleaned.split(/\\s*,\\s*(?:Section|Article)\\b/i)[0];
-  components.title = head.replace(/\\s*\\([^)]*\\)\\s*$/, "").trim();
-  if (parenthetical) components.year = parenthetical.replace(/[()]/g, "").trim().match(/\\d{4}/)?.[0];
-  const no = parenthetical?.match(/No\\.?\\s*(\\d+)\\s+of\\s+(\\d{4})/i);
-  if (no) components.identifier = `No ${no[1]} of ${no[2]}`;
-  const ref = cleaned.match(/\\b(Section|Article)\\s+([\\w.-]+(?:\\s*[-–]\\s*[\\w.-]+)?)/i);
+  const parenthetical = cleaned.match(/\((?:No\.?\s*\d+\s+of\s+\d{4}|\d{4})\)/i)?.[0];
+  const head = cleaned.split(/\s*,\s*(?:Section|Article)\b/i)[0];
+  components.title = head.replace(/\s*\([^)]*\)\s*$/, "").trim();
+  if (parenthetical) components.year = parenthetical.replace(/[()]/g, "").trim().match(/\d{4}/)?.[0];
+  const no = parenthetical?.match(/No\.?\s*(\d+)\s+of\s+(\d{4})/i);
+  if (no) components.identifier = "No " + no[1] + " of " + no[2];
+  const ref = cleaned.match(/\b(Section|Article)\s+([\w.-]+(?:\s*[-–]\s*[\w.-]+)?)/i);
   if (ref) {
     const key = ref[1].toLowerCase() === "article" ? "article" : "section";
     components[key] = ref[2];
   }
   return components;
-}
-
-function removeFinalStop(text: string): string {
-  return text.trim().replace(/[.!?]$/, "");
 }
 
 function formatSupportedCitation(text: string, sourceType: string, occurrence: Occurrence): { text: string; reason: string; safe: boolean; stage?: "first"|"subsequent" } | null {
@@ -178,19 +166,19 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
   if (sourceType === "BOOK") {
     const c = parseBookLike(text);
     if (!c.author || !c.title || !c.year || !c.publisher) return null;
-    const page = c.page ? `, ${c.page}` : "";
+    const page = c.page ? ", " + c.page : "";
     if (occurrence === "subsequent") {
       const surname = surnameOf(c.author);
       if (!surname) return null;
       return {
-        text: `${surname}, ${c.title}${page}.`,
+        text: surname + ", " + c.title + page + ".",
         reason: "This source has already appeared. KALCI's subsequent book form uses the author's second name, title and page.",
         safe: true,
         stage: "subsequent"
       };
     }
     return {
-      text: `${c.author}, ${c.title}, ${c.publisher}, ${c.year}${page}.`,
+      text: c.author + ", " + c.title + ", " + c.publisher + ", " + c.year + page + ".",
       reason: "This is the first occurrence of the book source, so KALCI's full book form is used.",
       safe: true,
       stage: "first"
@@ -200,12 +188,12 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
   if (sourceType === "DISSERTATION") {
     const c = parseBookLike(text);
     if (!c.author || !c.title || !c.year) return null;
-    const page = c.page ? `, ${c.page}` : "";
+    const page = c.page ? ", " + c.page : "";
     if (occurrence === "subsequent") {
       const surname = surnameOf(c.author);
       if (!surname) return null;
       return {
-        text: `${surname}, ${c.title}${page}.`,
+        text: surname + ", " + c.title + page + ".",
         reason: "This is a subsequent dissertation/thesis citation; KALCI shortens it to the author's second name, title and page.",
         safe: true,
         stage: "subsequent"
@@ -217,20 +205,20 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
   if (sourceType === "LEGISLATION") {
     const c = parseLegislation(text);
     if (!c.title) return null;
-    const ref = c.section ? `Section ${c.section}` : c.article ? `Article ${c.article}` : "";
-    const refSuffix = ref ? `, ${ref}` : "";
-    const no = c.identifier ? ` (${c.identifier})` : c.year && /constitution/i.test(c.title) ? ` (${c.year})` : "";
+    const ref = c.section ? "Section " + c.section : c.article ? "Article " + c.article : "";
+    const refSuffix = ref ? ", " + ref : "";
+    const no = c.identifier ? " (" + c.identifier + ")" : c.year && /constitution/i.test(c.title) ? " (" + c.year + ")" : "";
     if (occurrence === "first") {
       if (!no) return null;
       return {
-        text: `${c.title}${no}${refSuffix}.`,
+        text: c.title + no + refSuffix + ".",
         reason: "This is the first legislation citation. KALCI retains the Act number/year parenthetical and the section or Article reference.",
         safe: true,
         stage: "first"
       };
     }
     return {
-      text: `${c.title}${refSuffix}.`,
+      text: c.title + refSuffix + ".",
       reason: "This legislation has already appeared. KALCI's subsequent form drops the bracketed number/year.",
       safe: true,
       stage: "subsequent"
@@ -242,7 +230,7 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
     const surname = surnameOf(c.author);
     if (surname && c.title) {
       return {
-        text: `${surname}, ${c.title}${c.page ? `, ${c.page}` : ""}.`,
+        text: surname + ", " + c.title + (c.page ? ", " + c.page : "") + ".",
         reason: "The source recurs later in the document, so a shortened author/title form is safer than repeating full publication details.",
         safe: true,
         stage: "subsequent"
@@ -253,37 +241,40 @@ function formatSupportedCitation(text: string, sourceType: string, occurrence: O
   return null;
 }
 
-function buildSafeEdits(original: string, corrected: string): TextEdit[] {
+function buildSafeEdits(original: string, corrected: string, ruleCode = "KALCI-FORMAT-001"): TextEdit[] {
   if (original === corrected) return [];
   return [{
     start: 0,
     end: original.length,
     replacement: corrected,
-    ruleCode: "KALCI-FORMAT-001",
+    ruleCode,
     safe: true
   }];
 }
 
 function buildNormalisationEdits(text: string): TextEdit[] {
   const edits: TextEdit[] = [];
-  const pushMatches = (pattern: RegExp, replacement: string, ruleCode: string) => {
+  const pushMatches = (pattern: RegExp, replacement: string | ((...args: string[]) => string), ruleCode: string) => {
     const flags = pattern.flags.includes("g") ? pattern.flags : pattern.flags + "g";
     const re = new RegExp(pattern.source, flags);
     for (const match of text.matchAll(re)) {
       const start = match.index ?? 0;
-      edits.push({ start, end: start + match[0].length, replacement, ruleCode, safe: true });
+      const rendered = typeof replacement === "function"
+        ? replacement(...([match[0], ...match.slice(1)] as string[]))
+        : replacement;
+      edits.push({ start, end: start + match[0].length, replacement: rendered, ruleCode, safe: true });
     }
   };
-  pushMatches(/\\bet\\s+al\\.?\\b/gi, "and others", "KALCI-LATIN-001");
-  pushMatches(/\\binter\\s+alia\\b/gi, "among other things", "KALCI-LATIN-002");
-  pushMatches(/\\bprima\\s+facie\\b/gi, "at first instance", "KALCI-LATIN-002");
-  pushMatches(/\\bper\\s+se\\b/gi, "in itself", "KALCI-LATIN-002");
-  pushMatches(/\\b([A-Z])\\.\\s*([A-Z])\\./g, (_, a, b) => `${a}${b}`, "KALCI-INIT-001");
-  pushMatches(/\\b(Mr|Mrs|Dr)\\./g, (_, title) => title, "KALCI-ABBR-001");
-  pushMatches(/\\s+&\\s+/g, " and ", "KALCI-SYM-001");
-  pushMatches(/\\s*\\/\\s*/g, " or ", "KALCI-SYM-002");
-  pushMatches(/\\bp\\.?\\s+(?=\\d)/gi, "", "KALCI-PAGE-001");
-  pushMatches(/\\bpara\\.\\s*/gi, "para ", "KALCI-PARA-001");
+  pushMatches(/\bet\s+al\.?\b/gi, "and others", "KALCI-LATIN-001");
+  pushMatches(/\binter\s+alia\b/gi, "among other things", "KALCI-LATIN-002");
+  pushMatches(/\bprima\s+facie\b/gi, "at first instance", "KALCI-LATIN-002");
+  pushMatches(/\bper\s+se\b/gi, "in itself", "KALCI-LATIN-002");
+  pushMatches(/\b([A-Z])\.\s*([A-Z])\./g, (_full, a, b) => a + b, "KALCI-INIT-001");
+  pushMatches(/\b(Mr|Mrs|Dr)\./g, (_full, title) => title, "KALCI-ABBR-001");
+  pushMatches(/\s+&\s+/g, " and ", "KALCI-SYM-001");
+  pushMatches(/\s*\/\s*/g, " or ", "KALCI-SYM-002");
+  pushMatches(/\bp\.?\s+(?=\d)/gi, "", "KALCI-PAGE-001");
+  pushMatches(/\bpara\.\s*/gi, "para ", "KALCI-PARA-001");
   return edits.sort((a, b) => b.start - a.start);
 }
 
@@ -303,14 +294,14 @@ export function formatCitation(
   if (structural) {
     return {
       correctedText: structural.text,
-      edits: buildSafeEdits(text, structural.text),
+      edits: buildSafeEdits(text, structural.text, "KALCI-FORMAT-" + sourceType),
       reason: structural.reason,
       stage: structural.stage,
       safe: structural.safe
     };
   }
   const normalized = applyTextEdits(text, buildNormalisationEdits(text));
-  let corrected = normalized.replace(/\\s+/g, " ").replace(/\\s+([,.;:])/g, "$1").trim();
+  let corrected = normalized.replace(/\s+/g, " ").replace(/\s+([,.;:])/g, "$1").trim();
   if (corrected && !/[.!?]$/.test(corrected)) corrected += ".";
   const edits = buildSafeEdits(text, corrected);
   return {
