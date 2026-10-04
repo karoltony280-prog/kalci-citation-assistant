@@ -161,8 +161,24 @@ export default function App() {
                           <div className="segment" key={s.id}>
                             <div><b>{s.sourceType}</b><span>{s.occurrence}</span></div>
                             <p>{s.raw}</p>
+                            {s.correctedText !== s.raw && (
+                              <div className="correction-preview">
+                                <small>Safe correction</small>
+                                <div><span>Before</span><p>{s.raw}</p></div>
+                                <div><span>After</span><p>{s.correctedText}</p></div>
+                                {s.correctionReason && <em>{s.correctionReason}</em>}
+                              </div>
+                            )}
                           </div>
                         ))}
+                      </div>
+                    )}
+                    {r.segments.length === 1 && r.segments[0].correctedText !== r.text && (
+                      <div className="correction-preview">
+                        <small>Safe correction preview</small>
+                        <div><span>Before</span><p>{r.text}</p></div>
+                        <div><span>After</span><p>{r.correctedText}</p></div>
+                        {r.segments[0].correctionReason && <em>{r.segments[0].correctionReason}</em>}
                       </div>
                     )}
                     {r.findings.length === 0 ? (
@@ -171,7 +187,7 @@ export default function App() {
                       r.findings.map((f, i) => (
                         <div className="rule-row" key={i}>
                           <span className={"severity " + f.severity}>{f.severity}</span>
-                          <div><b>{f.message}</b><small>{f.code} · {f.rule}</small>{f.suggestion && <em>Suggested: {f.suggestion}</em>}</div>
+                          <div><b>{f.message}</b><small>{f.code} · {f.rule}{f.safeToApply ? " · safe to apply" : ""}</small>{f.suggestion && <em>Suggested: {f.suggestion}</em>}</div>
                         </div>
                       ))
                     )}
