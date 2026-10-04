@@ -345,12 +345,36 @@ export default function App() {
                     {r.findings.length === 0 ? (
                       <div className="ok">✓ No flagged KALCI issue</div>
                     ) : (
-                      r.findings.map((f, i) => (
-                        <div className="rule-row" key={i}>
-                          <span className={"severity " + f.severity}>{f.severity}</span>
-                          <div><b>{f.message}</b><small>{f.code} · {f.rule}{f.safeToApply ? " · safe to apply" : ""}</small>{f.suggestion && <em>Suggested: {f.suggestion}</em>}</div>
-                        </div>
-                      ))
+                      r.findings.map((f, i) => {
+                        const key = findingKey(r.number, f.code);
+                        if (dismissedFindings.has(key)) {
+                          return (
+                            <div className="rule-row dismissed" key={i}>
+                              <span className="severity review">dismissed</span>
+                              <div className="rule-content"><b>{f.message}</b><small>{f.code} · hidden for this working session</small></div>
+                              <button className="ghost tiny" onClick={() => setDismissedFindings((current) => {
+                                const next = new Set(current); next.delete(key); return next;
+                              })}>Restore</button>
+                            </div>
+                          );
+                        }
+                        return (
+                          <div className="rule-row" key={i}>
+                            <span className={"severity " + f.severity}>{f.severity}</span>
+                            <div className="rule-content">
+                              <b>{f.message}</b>
+                              <small>{f.code} · {f.rule}{f.safeToApply ? " · safe to apply" : ""}</small>
+                              {f.suggestion && <em>Suggested: {f.suggestion}</em>}
+                              <div className="finding-actions">
+                                {f.safeToApply && f.suggestion && f.original && (
+                                  <button className="tiny primary" onClick={() => applyFinding(r.number, f.original, f.suggestion!, f.code)}>Apply correction</button>
+                                )}
+                                <button className="tiny ghost" onClick={() => dismissFinding(key)}>Dismiss</button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
                     )}
                   </article>
                 ))}
