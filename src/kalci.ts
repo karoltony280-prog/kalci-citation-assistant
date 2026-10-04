@@ -146,7 +146,7 @@ function splitByComma(text: string): string[] {
 }
 
 function parseBookLike(text: string): SourceComponents {
-  const parts = splitByComma(text.replace(/[.!?]$/, ""));
+  const parts = splitByComma(citationLeadless(text).replace(/[.!?]$/, ""));
   const components: SourceComponents = {};
   components.author = parts[0];
   components.title = parts[1];
@@ -158,7 +158,7 @@ function parseBookLike(text: string): SourceComponents {
 }
 
 function parseLegislation(text: string): SourceComponents {
-  const cleaned = text.replace(/[.!?]$/, "").trim();
+  const cleaned = citationLeadless(text).replace(/[.!?]$/, "").trim();
   const components: SourceComponents = {};
   const parenthetical = cleaned.match(/\((?:No\.?\s*\d+\s+of\s+\d{4}|\d{4})\)/i)?.[0];
   const head = cleaned.split(/\s*,\s*(?:Section|Article)\b/i)[0];
@@ -378,6 +378,12 @@ function canonical(value: string): string {
     .toLowerCase();
 }
 
+function citationLeadless(value: string): string {
+  return value
+    .replace(/^(?:see|see also|see generally|cf\.?|compare)\s+/i, "")
+    .trim();
+}
+
 function cleanKey(value: string): string {
   return canonical(value).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 }
@@ -391,7 +397,7 @@ function detectSourceType(text: string): { type: string; confidence: number } {
   return { type: best.type, confidence: best.score };
 }
 function parseGenericParts(raw: string): string[] {
-  return raw
+  return citationLeadless(raw)
     .replace(/[.!?]$/, "")
     .split(",")
     .map((part) => part.trim())
@@ -407,7 +413,7 @@ function parseDate(raw: string): string | undefined {
 
 function parseCaseComponents(raw: string): SourceComponents {
   const components: SourceComponents = {};
-  const clean = raw.replace(/[.!?]$/, "").trim();
+  const clean = citationLeadless(raw).replace(/[.!?]$/, "").trim();
 
   const para = clean.match(/\bpara\s+([A-Za-z0-9.-]+)/i);
   if (para) components.paragraph = para[1];
@@ -514,18 +520,25 @@ function parseComponents(text: string, sourceType: string): SourceComponents {
 }
 
 function sourceFingerprint(text: string, sourceType: string): string | undefined {
-  const c = parseComponents(text, sourceType);
+  const leadless = citationLeadless(text);
+  const c = parseComponents(leadless, sourceType);
+
   if (sourceType.includes("CASE") || ["EACJ","AFRICAN_COURT","AFRICAN_COMMISSION","ECTHR","ICJ","IACTHR","IACMHR","UN_COMMITTEE","ARBITRATION","WTO"].includes(sourceType)) {
-    const beforeYear = canonical(text).split(/\[?\d{4}\]?/)[0];
+    const title = c.title ? cleanKey(c.title) : "";
+    const number = c.caseNumber ? cleanKey(c.caseNumber) : "";
+    if (title) return `${sourceType}|case|${title}|${number}`;
+    const beforeYear = canonical(leadless).split(/\[?\d{4}\]?/)[0];
     return `${sourceType}|case|${cleanKey(beforeYear).slice(0, 220)}`;
   }
+
   if (sourceType === "LEGISLATION") {
-    const match = canonical(text).match(/[a-z][a-z &'’-]{2,120}\b(?:act|bill|regulations?|rules?|constitution)\b(?:\s*\d{4})?/i);
-    return "LEGISLATION|" + cleanKey(match?.[0] ?? text).slice(0, 180);
+    return "LEGISLATION|" + cleanKey(c.title ?? leadless).slice(0, 180);
   }
-  if (c.author && c.title) return `${sourceType}|${cleanKey(c.author)}|${cleanKey(c.title)}`;
-  if (c.url) return `${sourceType}|${cleanKey(c.url)}`;
-  return `${sourceType}|${cleanKey(text).slice(0, 180)}`;
+
+  if (c.title && c.author) return `${sourceType}|author-title|${cleanKey(surnameOf(c.author) ?? c.author)}|${cleanKey(c.title)}`;
+  if (c.title) return `${sourceType}|title|${cleanKey(c.title)}`;
+  if (c.url) return `${sourceType}|url|${cleanKey(c.url)}`;
+  return `${sourceType}|text|${cleanKey(leadless).slice(0, 180)}`;
 }
 
 export function splitCompoundFootnote(text: string): string[] {
