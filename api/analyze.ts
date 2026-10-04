@@ -85,13 +85,15 @@ export default async function handler(request: Request): Promise<Response> {
               name: segment.components.title ?? segment.raw,
               type: segment.sourceType,
               firstCitation: undefined as string | undefined,
-              occurrences: [] as Array<{ footnote: number; occurrence: string; id: string }>,
+              occurrences: [] as Array<{ footnote: number; occurrence: string; stage: string; id: string; raw: string }>,
               confidence: segment.sourceConfidence
             };
             existing.occurrences.push({
               footnote: Number(segment.id.split("-")[0]),
               occurrence: segment.occurrence,
-              id: segment.id
+              stage: segment.sourceOccurrence === 1 ? "first" : "subsequent",
+              id: segment.id,
+              raw: segment.raw
             });
             if (segment.occurrence === "first" && !existing.firstCitation) existing.firstCitation = segment.id;
             existing.confidence = Math.max(existing.confidence, segment.sourceConfidence);
@@ -102,11 +104,16 @@ export default async function handler(request: Request): Promise<Response> {
             name: string;
             type: string;
             firstCitation?: string;
-            occurrences: Array<{ footnote: number; occurrence: string; id: string }>;
+            occurrences: Array<{ footnote: number; occurrence: string; stage: string; id: string; raw: string }>;
             confidence: number;
           }>())
           .values()
-      ).map((source) => ({ ...source, occurrenceCount: source.occurrences.length })),
+      ).map((source) => ({
+        ...source,
+        occurrenceCount: source.occurrences.length,
+        firstFootnote: source.occurrences.find((item) => item.stage === "first")?.footnote ?? null,
+        forms: Array.from(new Set(source.occurrences.map((item) => item.raw)))
+      })),
       results
     }, { headers: { "access-control-allow-origin": "*" } });
   } catch (error) {
