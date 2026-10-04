@@ -3,6 +3,7 @@ import { analyzeFootnotes, formatCitation, KALCI_RULES, type CitationResult, typ
 import { extractDocxFootnotesFromFile } from "./docx";
 import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate, type PersistedDocumentData } from "./supabase";
 import DocumentVault from "./DocumentVault";
+import AuditSummary from "./AuditSummary";
 
 const SAMPLE = [
   "FX Njenga, International Law and World Order Problems, Moi University Press, 2001, p 21",
@@ -201,6 +202,8 @@ export default function App() {
               <div><b>{stats.warnings}</b><span>Warnings</span></div>
               <div><b>{stats.review}</b><span>Review</span></div>
             </section>
+
+            <AuditSummary results={results} />
 
             {sourceLedger.length > 0 && (
               <section className="source-ledger">
