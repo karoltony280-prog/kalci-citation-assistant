@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeFootnotes, KALCI_RULES, type CitationResult, type KalciTemplateDefinition } from "./kalci";
 import { extractDocxFootnotesFromFile } from "./docx";
-import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate } from "./supabase";
+import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate, type PersistedDocumentData } from "./supabase";
+import DocumentVault from "./DocumentVault";
 
 const SAMPLE = [
   "FX Njenga, International Law and World Order Problems, Moi University Press, 2001, p 21",
@@ -17,6 +18,7 @@ export default function App() {
   const [dbStyle, setDbStyle] = useState<{name:string;version:string;status:string} | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
   const [documentName, setDocumentName] = useState<string | null>(null);
+  const [documentId, setDocumentId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
   const [sourceTypes, setSourceTypes] = useState<KalciSourceType[]>([]);
   const [templates, setTemplates] = useState<KalciTemplate[]>([]);
@@ -102,6 +104,7 @@ export default function App() {
       setValue(imported.join("\n"));
       setResults(analyzeFootnotes(imported, engineTemplates));
       setDocumentName(file.name);
+      setDocumentId(null);
       setActive("checker");
     } catch (error) {
       window.alert(error instanceof Error ? error.message : String(error));
@@ -127,6 +130,21 @@ export default function App() {
           <button className={active === "word" ? "nav active" : "nav"} onClick={() => setActive("word")}>Word Add-in</button>
         </nav>
       </header>
+
+      <DocumentVault
+        documentId={documentId}
+        documentName={documentName}
+        value={value}
+        results={results}
+        onDocumentIdChange={setDocumentId}
+        onDocumentNameChange={setDocumentName}
+        onLoad={(document: PersistedDocumentData) => {
+          const restored = document.footnotes.map((item) => item.raw_text);
+          setValue(restored.join("\n"));
+          setResults(analyzeFootnotes(restored, engineTemplates));
+          setActive("checker");
+        }}
+      />
 
       <main>
         {active === "checker" && (
@@ -156,7 +174,7 @@ export default function App() {
               <div className="import-actions">
                 <input ref={fileInput} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(e) => e.target.files?.[0] && importDocx(e.target.files[0])} />
                 <button className="secondary" disabled={importing} onClick={() => fileInput.current?.click()}>{importing ? "Reading Word document…" : "Import .docx"}</button>
-                <button className="ghost" onClick={() => { setDocumentName(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE, engineTemplates)); }}>Load sample</button>
+                <button className="ghost" onClick={() => { setDocumentId(null); setDocumentName(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE, engineTemplates)); }}>Load sample</button>
               </div>
             </section>
 
