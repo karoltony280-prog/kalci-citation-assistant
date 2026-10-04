@@ -5,6 +5,7 @@ import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceT
 import DocumentVault from "./DocumentVault";
 import AuditSummary from "./AuditSummary";
 import FormatAudit from "./FormatAudit";
+import DocumentDiagnostics from "./DocumentDiagnostics";
 
 const SAMPLE = [
   "FX Njenga, International Law and World Order Problems, Moi University Press, 2001, p 21",
@@ -67,6 +68,7 @@ export default function App() {
       count: number;
       firstFootnote?: number;
       confidence: number;
+      footnotes: number[];
       occurrences: Array<{ footnote: number; stage: string; raw: string }>;
       stageIssues: number;
     }>();
@@ -211,6 +213,7 @@ export default function App() {
 
             <AuditSummary results={results} />
             <FormatAudit audit={formatAudit} />
+            <DocumentDiagnostics results={results} />
 
             {sourceLedger.length > 0 && (
               <section className="source-ledger">
