@@ -69,7 +69,15 @@ function buildPayload(value: string, results: CitationResult[]) {
         sourceType: segment.sourceType,
         confidence: segment.sourceConfidence,
         sourceKey: segment.sourceKey,
-        occurrenceIndex: segment.sourceOccurrence
+        occurrenceIndex: segment.sourceOccurrence,
+        findings: segment.findings.map((finding) => ({
+          ruleCode: finding.code,
+          severity: finding.severity,
+          message: finding.message,
+          expected: finding.suggestion,
+          detected: finding.original,
+          correction: finding.suggestion
+        }))
       });
     });
   });
