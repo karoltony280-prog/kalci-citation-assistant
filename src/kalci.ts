@@ -770,6 +770,21 @@ function attachSourceChains(results: CitationResult[]): CitationResult[] {
       segment.sourceOccurrenceCount = group.length;
       segment.sourceFootnotes = footnotes;
       segment.sourceFirstId = group[0]?.id;
+
+      if (index > 0 && segment.sourceType !== "BOOK") {
+        const subsequent = formatSupportedCitation(segment.raw, segment.sourceType, "subsequent");
+        if (subsequent && subsequent.text !== segment.raw.trim()) {
+          segment.findings.push({
+            code: "KALCI-OCC-001",
+            message: "This source has already appeared. Its citation form should be checked against the KALCI subsequent-mention structure.",
+            rule: "KALCI Guide — source recurrence and subsequent mention",
+            severity: "review",
+            original: segment.raw,
+            suggestion: subsequent.text,
+            safeToApply: subsequent.safe
+          });
+        }
+      }
     });
   }
 
