@@ -57,6 +57,19 @@ export type PersistedDocument = {
   updated_at: string;
 };
 
+export type DocumentVersion = {
+  id: string;
+  document_id: string;
+  version_number: number;
+  total_footnotes: number;
+  error_count: number;
+  warning_count: number;
+  review_count: number;
+  score: number;
+  snapshot_json: Record<string, unknown>;
+  created_at: string;
+};
+
 export type PersistedDocumentData = PersistedDocument & {
   footnotes: Array<{ footnote_number: number; raw_text: string; validation_status: string }>;
   sources: Array<{ id: string; canonical_key: string; canonical_name: string; source_type: string | null }>;
@@ -301,7 +314,79 @@ export async function saveDocument(input: {
     }
   }
 
-  return document as PersistedDocument;
+
+  const versionStats = {
+    totalFootnotes: input.footnotes.length,
+    errorCount: input.citations.reduce((count, citation) => count + (citation.findings?.filter((finding) => finding.severity === "error").length ?? 0), 0),
+    warningCount: input.citations.reduce((count, citation) => count + (citation.findings?.filter((finding) => finding.severity === "warning").length ?? 0), 0),
+    reviewCount: input.citations.reduce((count, citation) => count + (citation.findings?.filter((finding) => finding.severity === "review").length ?? 0), 0)
+  };
+  const issueFootnotes = new Set(
+    input.citations
+      .filter((citation) => (citation.findings?.length ?? 0) > 0)
+      .map((citation) => citation.footnoteNumber)
+  );
+  const cleanFootnotes = Math.max(0, versionStats.totalFootnotes - issueFootnotes.size);
+  const score = versionStats.totalFootnotes
+    ? Math.round((cleanFootnotes / versionStats.totalFootnotes) * 100)
+    : 0;
+
+  const { data: latestVersion } = await supabase
+    .from("document_versions")
+    .select("version_number")
+    .eq("document_id", documentId)
+    .order("version_number", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  const nextVersion = (latestVersion?.version_number ?? 0) + 1;
+  const snapshot = {
+    footnotes: input.footnotes,
+    sources: input.sources,
+    citations: input.citations,
+    stats: {
+      ...versionStats,
+      score
+    }
+  };
+
+  const { error: versionError } = await supabase.from("document_versions").insert({
+    document_id: documentId,
+    version_number: nextVersion,
+    total_footnotes: versionStats.totalFootnotes,
+    error_count: versionStats.errorCount,
+    warning_count: versionStats.warningCount,
+    review_count: versionStats.reviewCount,
+    score,
+    snapshot_json: snapshot
+  });
+  if (versionError) throw versionError;
+
+  return { ...(document as PersistedDocument), version_number: nextVersion } as PersistedDocument & { version_number: number };
+}
+
+export async function listDocumentVersions(documentId: string): Promise<DocumentVersion[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("document_versions")
+    .select("id,document_id,version_number,total_footnotes,error_count,warning_count,review_count,score,snapshot_json,created_at")
+    .eq("document_id", documentId)
+    .order("version_number", { ascending: false })
+    .limit(30);
+  if (error) throw error;
+  return (data ?? []) as DocumentVersion[];
+}
+
+export async function loadDocumentVersion(documentId: string, versionNumber: number): Promise<DocumentVersion> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase
+    .from("document_versions")
+    .select("id,document_id,version_number,total_footnotes,error_count,warning_count,review_count,score,snapshot_json,created_at")
+    .eq("document_id", documentId)
+    .eq("version_number", versionNumber)
+    .single();
+  if (error) throw error;
+  return data as DocumentVersion;
 }
 
 export async function listMyDocuments(): Promise<PersistedDocument[]> {
