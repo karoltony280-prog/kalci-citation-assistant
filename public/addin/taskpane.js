@@ -143,7 +143,7 @@ function render() {
   if (ledger) {
     ledger.innerHTML = state.sources.length
       ? `<div class="ledger-title">Source chain</div>` + state.sources.map((source) =>
-          `<div class="source-row"><b>${escapeHtml(source.name || source.key)}</b><span>${escapeHtml(source.type || "other")}</span><small>${source.occurrenceCount || source.occurrences?.length || 0} occurrence${(source.occurrenceCount || source.occurrences?.length || 0) === 1 ? "" : "s"} · ${Math.round((source.confidence || 0) * 100)}% confidence · FNs ${(source.occurrences || []).map((item) => item.footnote).join(", ")}</small></div>`
+          `<div class="source-row"><b>${escapeHtml(source.name || source.key)}</b><span>${escapeHtml(source.type || "other")}</span><small>${source.occurrenceCount || source.occurrences?.length || 0} occurrence${(source.occurrenceCount || source.occurrences?.length || 0) === 1 ? "" : "s"} · ${Math.round((source.confidence || 0) * 100)}% confidence · FNs ${(source.occurrences || []).map((item) => item.footnote + " (" + item.stage + ")").join(" → ")}</small>${source.forms?.length ? `<div class="source-forms">${source.forms.map((form) => `<span>${escapeHtml(form)}</span>`).join("")}</div>` : ""}</div>`
         ).join("")
       : "";
   }
