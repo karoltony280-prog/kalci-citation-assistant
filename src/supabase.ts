@@ -1,7 +1,16 @@
+import { createClient, type Session, type User } from "@supabase/supabase-js";
+
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
 export const supabaseConfigured = Boolean(url && key);
+export const supabase = supabaseConfigured ? createClient(url!, key!, {
+  auth: {
+    persistSession: true,
+    autoRefreshToken: true,
+    detectSessionInUrl: true
+  }
+}) : null;
 
 async function getJson<T>(path: string): Promise<T> {
   if (!url || !key) throw new Error("Supabase is not configured.");
@@ -42,4 +51,199 @@ export async function loadKalciCatalog(): Promise<{sourceTypes: KalciSourceType[
     getJson<KalciTemplate[]>("citation_templates?select=source_type_id,citation_stage,template_text,example,notes")
   ]);
   return { sourceTypes, templates };
+}
+
+export type PersistedDocument = {
+  id: string;
+  title: string;
+  file_name: string | null;
+  status: string;
+  updated_at: string;
+};
+
+export async function getCurrentSession(): Promise<Session | null> {
+  if (!supabase) return null;
+  const { data, error } = await supabase.auth.getSession();
+  if (error) throw error;
+  return data.session;
+}
+
+export function onAuthStateChange(callback: (session: Session | null) => void): () => void {
+  if (!supabase) return () => undefined;
+  const { data } = supabase.auth.onAuthStateChange((_event, session) => callback(session));
+  return () => data.subscription.unsubscribe();
+}
+
+export async function signIn(email: string, password: string) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+export async function signUp(email: string, password: string) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data, error } = await supabase.auth.signUp({ email, password });
+  if (error) throw error;
+  return data;
+}
+
+export async function signOut() {
+  if (!supabase) return;
+  const { error } = await supabase.auth.signOut();
+  if (error) throw error;
+}
+
+export async function saveDocument(
+  input: {
+    id?: string;
+    title: string;
+    fileName?: string | null;
+    styleId?: string | null;
+    footnotes: Array<{ number: number; rawText: string; validationStatus: "pending"|"valid"|"error"|"warning"|"review" }>;
+    sources: Array<{
+      canonicalKey: string;
+      canonicalName: string;
+      sourceType: string;
+      author?: string;
+      title?: string;
+      year?: string;
+      publisher?: string;
+      metadata?: Record<string, unknown>;
+    }>;
+    citations: Array<{
+      footnoteNumber: number;
+      segmentNumber: number;
+      rawText: string;
+      normalizedText: string;
+      citationStage: "first"|"subsequent";
+      sourceType: string;
+      confidence: number;
+      sourceKey?: string;
+    }>;
+  }
+): Promise<PersistedDocument> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const session = await getCurrentSession();
+  if (!session?.user) throw new Error("Sign in before saving a document.");
+
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .upsert({
+      ...(input.id ? { id: input.id } : {}),
+      user_id: session.user.id,
+      title: input.title,
+      file_name: input.fileName ?? null,
+      citation_style_id: input.styleId ?? null,
+      status: "analyzed"
+    })
+    .select("id,title,file_name,status,updated_at")
+    .single();
+
+  if (documentError) throw documentError;
+
+  const documentId = document.id as string;
+
+  await supabase.from("footnotes").delete().eq("document_id", documentId);
+  await supabase.from("citations").delete().eq("document_id", documentId);
+  await supabase.from("sources").delete().eq("document_id", documentId);
+
+  if (input.footnotes.length) {
+    const { error } = await supabase.from("footnotes").insert(
+      input.footnotes.map((footnote) => ({
+        document_id: documentId,
+        footnote_number: footnote.number,
+        raw_text: footnote.rawText,
+        validation_status: footnote.validationStatus
+      }))
+    );
+    if (error) throw error;
+  }
+
+  const { data: sourceRows, error: sourceError } = input.sources.length
+    ? await supabase.from("sources").insert(
+        input.sources.map((source) => ({
+          document_id: documentId,
+          canonical_key: source.canonicalKey,
+          canonical_name: source.canonicalName,
+          source_type: source.sourceType,
+          author: source.author ?? null,
+          title: source.title ?? null,
+          year: source.year ?? null,
+          publisher: source.publisher ?? null,
+          metadata_json: source.metadata ?? {}
+        }))
+      ).select("id,canonical_key")
+    : { data: [], error: null };
+
+  if (sourceError) throw sourceError;
+  const sourceIdByKey = new Map((sourceRows ?? []).map((row) => [row.canonical_key as string, row.id as string]));
+
+  if (input.citations.length) {
+    const { data: footnoteRows, error: footnoteError } = await supabase
+      .from("footnotes")
+      .select("id,footnote_number")
+      .eq("document_id", documentId);
+
+    if (footnoteError) throw footnoteError;
+    const footnoteIdByNumber = new Map((footnoteRows ?? []).map((row) => [row.footnote_number as number, row.id as string]));
+
+    const { data: citationRows, error } = await supabase.from("citations").insert(
+      input.citations.map((citation) => ({
+        document_id: documentId,
+        footnote_id: footnoteIdByNumber.get(citation.footnoteNumber) ?? null,
+        source_id: citation.sourceKey ? sourceIdByKey.get(citation.sourceKey) ?? null : null,
+        raw_text: citation.rawText,
+        normalized_text: citation.normalizedText,
+        citation_stage: citation.citationStage,
+        source_type: citation.sourceType,
+        confidence: citation.confidence,
+        validation_status: "pending"
+      }))
+    ).select("id,footnote_id,source_id");
+
+    if (error) throw error;
+
+    if (citationRows?.length) {
+      const citationIdByPair = new Map(
+        citationRows.map((row, index) => [`${row.footnote_id}|${input.citations[index].segmentNumber}`, row.id as string])
+      );
+
+      const occurrenceRows = input.citations.flatMap((citation) => {
+        const footnoteId = footnoteIdByNumber.get(citation.footnoteNumber);
+        const citationId = footnoteId ? citationIdByPair.get(`${footnoteId}|${citation.segmentNumber}`) : undefined;
+        if (!citationId) return [];
+        return [{
+          document_id: documentId,
+          citation_id: citationId,
+          source_id: citation.sourceKey ? sourceIdByKey.get(citation.sourceKey) ?? null : null,
+          footnote_number: citation.footnoteNumber,
+          segment_number: citation.segmentNumber,
+          occurrence_index: undefined,
+          citation_stage: citation.citationStage,
+          raw_text: citation.rawText,
+          normalized_text: citation.normalizedText,
+          source_confidence: citation.confidence
+        }];
+      });
+
+      if (occurrenceRows.length) {
+        const { error: occurrenceError } = await supabase.from("citation_occurrences").insert(occurrenceRows);
+        if (occurrenceError) throw occurrenceError;
+      }
+    }
+  }
+
+  return document as PersistedDocument;
+}
+
+export async function listMyDocuments(): Promise<PersistedDocument[]> {
+  if (!supabase) return [];
+  const { data, error } = await supabase
+    .from("documents")
+    .select("id,title,file_name,status,updated_at")
+    .order("updated_at", { ascending: false })
+    .limit(20);
+  if (error) throw error;
+  return (data ?? []) as PersistedDocument[];
 }
