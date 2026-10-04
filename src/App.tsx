@@ -64,6 +64,7 @@ export default function App() {
       count: number;
       firstFootnote?: number;
       confidence: number;
+      occurrences: Array<{ footnote: number; stage: string; raw: string }>;
     }>();
 
     results.flatMap((result) => result.segments).forEach((segment) => {
@@ -73,13 +74,19 @@ export default function App() {
         type: segment.sourceType,
         count: 0,
         confidence: 0,
-        footnotes: [] as number[]
+        footnotes: [] as number[],
+        occurrences: [] as Array<{ footnote: number; stage: string; raw: string }>
       };
       existing.count += 1;
       existing.confidence = Math.max(existing.confidence, segment.sourceConfidence);
       for (const footnote of segment.sourceFootnotes ?? []) {
         if (!existing.footnotes.includes(footnote)) existing.footnotes.push(footnote);
       }
+      existing.occurrences.push({
+        footnote: Number(segment.id.split("-")[0]),
+        stage: segment.sourceOccurrence === 1 ? "first" : "subsequent",
+        raw: segment.raw
+      });
       if (segment.occurrence === "first" && existing.firstFootnote === undefined) {
         existing.firstFootnote = Number(segment.id.split("-")[0]);
       }
@@ -203,6 +210,15 @@ export default function App() {
                         <span>{source.count} {source.count === 1 ? "occurrence" : "occurrences"}</span>
                       </div>
                       <small>{source.type} · {Math.round(source.confidence * 100)}% classification confidence{source.firstFootnote !== undefined ? ` · first at FN ${source.firstFootnote}` : ""}{source.footnotes.length ? ` · FNs ${source.footnotes.join(", ")}` : ""}</small>
+                      <div className="source-chain">
+                        {source.occurrences.map((occurrence, occurrenceIndex) => (
+                          <span key={occurrence.footnote + "-" + occurrenceIndex}>
+                            {occurrenceIndex > 0 && <b>→</b>}
+                            <i>FN {occurrence.footnote}</i>
+                            <em>{occurrence.stage}</em>
+                          </span>
+                        ))}
+                      </div>
                     </article>
                   ))}
                 </div>
