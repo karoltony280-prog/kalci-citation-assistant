@@ -59,6 +59,8 @@ export type PersistedDocument = {
 
 export type PersistedDocumentData = PersistedDocument & {
   footnotes: Array<{ footnote_number: number; raw_text: string; validation_status: string }>;
+  sources: Array<{ id: string; canonical_key: string; canonical_name: string; source_type: string | null }>;
+  aliases: Array<{ source_id: string; alias_text: string; alias_type: string; confidence: number | null }>;
 };
 
 export async function getCurrentSession(): Promise<Session | null> {
@@ -97,6 +99,10 @@ export async function signOut() {
 async function throwOnError(promise: PromiseLike<{ error: { message: string } | null }>, label: string) {
   const { error } = await promise;
   if (error) throw new Error(`${label}: ${error.message}`);
+}
+
+function normalizeAlias(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9\s]/g, " ").replace(/\s+/g, " ").trim();
 }
 
 export async function saveDocument(input: {
@@ -196,6 +202,22 @@ export async function saveDocument(input: {
   if (sourceError) throw sourceError;
   const sourceIdByKey = new Map((sourceRows ?? []).map((row) => [row.canonical_key as string, row.id as string]));
 
+  if (sourceRows?.length && input.citations.length) {
+    const aliases = input.citations
+      .filter((citation) => citation.sourceKey && sourceIdByKey.has(citation.sourceKey))
+      .map((citation) => ({
+        source_id: sourceIdByKey.get(citation.sourceKey as string)!,
+        alias_text: citation.rawText,
+        normalized_alias: normalizeAlias(citation.rawText),
+        alias_type: citation.citationStage === "first" ? "first-form" : "subsequent-form",
+        confidence: citation.confidence
+      }));
+    if (aliases.length) {
+      const { error: aliasError } = await supabase.from("source_aliases").insert(aliases);
+      if (aliasError) throw aliasError;
+    }
+  }
+
   if (input.citations.length) {
     const { data: footnoteRows, error: footnoteError } = await supabase
       .from("footnotes")
@@ -281,8 +303,22 @@ export async function loadDocument(id: string): Promise<PersistedDocumentData> {
     .order("footnote_number", { ascending: true });
   if (footnoteError) throw footnoteError;
 
+  const { data: sources, error: sourceError } = await supabase
+    .from("sources")
+    .select("id,canonical_key,canonical_name,source_type")
+    .eq("document_id", id);
+  if (sourceError) throw sourceError;
+
+  const sourceIds = (sources ?? []).map((source) => source.id);
+  const { data: aliases, error: aliasError } = sourceIds.length
+    ? await supabase.from("source_aliases").select("source_id,alias_text,alias_type,confidence").in("source_id", sourceIds)
+    : { data: [], error: null };
+  if (aliasError) throw aliasError;
+
   return {
     ...(document as PersistedDocument),
-    footnotes: (footnotes ?? []) as PersistedDocumentData["footnotes"]
+    footnotes: (footnotes ?? []) as PersistedDocumentData["footnotes"],
+    sources: (sources ?? []) as PersistedDocumentData["sources"],
+    aliases: (aliases ?? []) as PersistedDocumentData["aliases"]
   };
 }
