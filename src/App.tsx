@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeFootnotes, KALCI_RULES, type CitationResult } from "./kalci";
 import { extractDocxFootnotesFromFile } from "./docx";
-import { loadKalciStyle, supabaseConfigured } from "./supabase";
+import { loadKalciCatalog, loadKalciStyle, supabaseConfigured, type KalciSourceType, type KalciTemplate } from "./supabase";
 
 const SAMPLE = [
   "FX Njenga, International Law and World Order Problems, Moi University Press, 2001, p 21",
@@ -18,10 +18,19 @@ export default function App() {
   const [dbError, setDbError] = useState<string | null>(null);
   const [documentName, setDocumentName] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [sourceTypes, setSourceTypes] = useState<KalciSourceType[]>([]);
+  const [templates, setTemplates] = useState<KalciTemplate[]>([]);
+  const [selectedType, setSelectedType] = useState("BOOK");
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     loadKalciStyle().then(setDbStyle).catch((error) => setDbError(error instanceof Error ? error.message : String(error)));
+    loadKalciCatalog()
+      .then((catalog) => {
+        setSourceTypes(catalog.sourceTypes);
+        setTemplates(catalog.templates);
+      })
+      .catch((error) => setDbError(error instanceof Error ? error.message : String(error)));
   }, []);
 
   const stats = useMemo(() => {
@@ -33,6 +42,9 @@ export default function App() {
     const sources = new Set(results.flatMap((r) => r.segments).map((s) => s.sourceKey).filter(Boolean));
     return { total: results.length, errors, warnings, review, clean, score, sources: sources.size };
   }, [results]);
+
+  const selectedSource = sourceTypes.find((source) => source.code === selectedType);
+  const selectedTemplates = templates.filter((template) => template.source_type_id === selectedSource?.id);
 
   function runCheck() {
     setResults(analyzeFootnotes(value.split(/\r?\n/)));
@@ -173,8 +185,30 @@ export default function App() {
         {active === "rules" && (
           <section className="rules-page">
             <span className="eyebrow">KABARAK UNIVERSITY LEGAL CITATION GUIDE</span>
-            <h1>Rule engine built around the guide.</h1>
-            <p className="lead">KALCI treats the guide as the authority for objective formatting checks. It does not silently convert an uncertain interpretation into a false certainty.</p>
+            <h1>The KALCI rulebook and source taxonomy.</h1>
+            <p className="lead">The database now holds the full source-type catalogue and first/subsequent templates represented by the February 2026 guide. The engine uses deterministic checks for objective rules and leaves interpretation visible for review.</p>
+            <div className="catalog-controls">
+              <label>
+                <span>Source type</span>
+                <select value={selectedType} onChange={(e) => setSelectedType(e.target.value)}>
+                  {sourceTypes.map((source) => <option value={source.code} key={source.code}>{source.name}</option>)}
+                </select>
+              </label>
+              {selectedSource && <div className="catalog-description"><b>{selectedSource.name}</b><p>{selectedSource.description}</p></div>}
+            </div>
+            <div className="template-grid">
+              {selectedTemplates.length ? selectedTemplates.map((template) => (
+                <div className="template-card" key={template.citation_stage}>
+                  <div className="template-stage">{template.citation_stage}</div>
+                  <h3>Expected form</h3>
+                  <p className="template-text">{template.template_text}</p>
+                  <h3>Example</h3>
+                  <p>{template.example}</p>
+                  {template.notes && <small>{template.notes}</small>}
+                </div>
+              )) : <div className="install-box"><b>Template not yet loaded.</b><p>Reconnect to the KALCI database to retrieve this source type.</p></div>}
+            </div>
+            <h2 className="catalog-heading">General machine checks</h2>
             <div className="rule-cards">
               {KALCI_RULES.map(([name, text]) => <div className="rule-card" key={name}><b>{name}</b><p>{text}</p></div>)}
             </div>
