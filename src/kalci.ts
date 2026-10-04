@@ -129,21 +129,21 @@ function parseComponents(text: string, sourceType: string): SourceComponents {
   const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
   if (parts.length > 0) components.author = parts[0].replace(/\.$/, "");
   if (parts.length > 1) components.title = parts[1].replace(/^["“]|["”]$/g, "").trim();
-  if (sourceType === "book" && parts.length >= 3) components.publisher = parts[2].replace(/\.$/, "");
-  if (sourceType === "internet resource") components.title = parts[0]?.replace(/\.$/, "");
+  if ((sourceType === "BOOK" || sourceType === "REPORT" || sourceType === "INSTITUTIONAL_AUTHOR" || sourceType === "SELF_PUBLISHED_ARTICLE") && parts.length >= 3) components.publisher = parts[2].replace(/\.$/, "");
+  if (sourceType === "INTERNET_RESOURCE") components.title = parts[0]?.replace(/\.$/, "");
 
   return components;
 }
 
 function sourceFingerprint(text: string, sourceType: string): string | undefined {
   const c = parseComponents(text, sourceType);
-  if (sourceType === "case") {
+  if (sourceType.includes("CASE") || ["EACJ","AFRICAN_COURT","AFRICAN_COMMISSION","ECTHR","ICJ","IACTHR","IACMHR","UN_COMMITTEE","ARBITRATION","WTO"].includes(sourceType)) {
     const beforeYear = canonical(text).split(/\[?\d{4}\]?/)[0];
-    return "case|" + cleanKey(beforeYear).slice(0, 220);
+    return `${sourceType}|case|${cleanKey(beforeYear).slice(0, 220)}`;
   }
-  if (sourceType === "legislation") {
+  if (sourceType === "LEGISLATION") {
     const match = canonical(text).match(/[a-z][a-z &'’-]{2,120}\b(?:act|bill|regulations?|rules?|constitution)\b(?:\s*\d{4})?/i);
-    return "legislation|" + cleanKey(match?.[0] ?? text).slice(0, 180);
+    return "LEGISLATION|" + cleanKey(match?.[0] ?? text).slice(0, 180);
   }
   if (c.author && c.title) return `${sourceType}|${cleanKey(c.author)}|${cleanKey(c.title)}`;
   if (c.url) return `${sourceType}|${cleanKey(c.url)}`;
@@ -214,7 +214,7 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     for (const key of matchKeys) registry.set(key, citationNumber);
   }
 
-  if (occurrence === "subsequent" && sourceType === "book")
+  if (occurrence === "subsequent" && sourceType === "BOOK")
     add("KALCI-BOOK-002", "This appears to be a subsequent book citation. KALCI requires the author's second name in subsequent mention.", "KALCI Guide, books — subsequent mention", "review", "Review the shortened subsequent form for this source.");
 
   const correctedText = tidyText(text);
@@ -231,7 +231,7 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
   };
 
   for (const field of requiredByType[sourceType] ?? []) {
-    const found = components.some((component) => component.type === field);
+    const found = Boolean(components[field as keyof SourceComponents]);
     if (!found) {
       findings.push({
         code: "KALCI-STRUCTURE-001",
@@ -244,7 +244,7 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     }
   }
 
-  if (sourceType === "JOURNAL_ARTICLE" && /^[A-Z]{2,}(?:\s+[A-Z]{2,})*$/.test(components.find((c) => c.type === "publisher")?.value ?? "")) {
+  if (sourceType === "JOURNAL_ARTICLE" && /^[A-Z]{2,}(?:\s+[A-Z]{2,})*$/.test(components.publisher ?? "")) {
     findings.push({
       code: "KALCI-JOURNAL-001",
       message: "Journal names should not be abbreviated.",
@@ -279,7 +279,7 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     ["KALCI-DECADE-001", /\b(?:19|20)\d{2}['’]s\b/, "Do not use apostrophes when writing decades.", "KALCI PDF, page 2 — General guidelines", "error"],
     ["KALCI-ROMAN-001", /\b(?:[IVXLCDM]{4,})\b/, "Avoid Roman numerals in the citation text.", "KALCI PDF, page 3 — General guidelines", "warning"],
     ["KALCI-COMMA-001", /\b\d{4,}\b/, "Figures with more than three digits should use commas.", "KALCI PDF, page 3 — General guidelines", "warning"],
-    ["KALCI-SUPERSCRIPT-001", /\b\d+(?:st|nd|rd|th)\b/i, "Avoid superscript-style ordinal forms; write ordinals in words.", "KALCI PDF, page 3 — General guidelines", "info"]
+    ["KALCI-SUPERSCRIPT-001", /\b\d+(?:st|nd|rd|th)\b/i, "Avoid superscript-style ordinal forms; write ordinals in words.", "KALCI PDF, page 3 — General guidelines", "warning"]
   ];
 
   for (const [code, pattern, message, rule, severity] of generalChecks) {
