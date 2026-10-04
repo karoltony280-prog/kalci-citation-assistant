@@ -173,6 +173,17 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
   const sourceType = detectSourceType(text);
   const components = parseComponents(text, sourceType);
   const sourceKey = sourceFingerprint(text, sourceType);
+  const title = components.title ? cleanKey(components.title) : "";
+  const year = components.year ? cleanKey(components.year) : "";
+  const surname = components.author ? cleanKey(components.author.split(/\s+/).filter(Boolean).at(-1) ?? components.author) : "";
+  const matchKeys = [
+    sourceKey,
+    title ? `${sourceType}|title|${title}` : undefined,
+    title && year ? `${sourceType}|title-year|${title}|${year}` : undefined,
+    surname && title ? `${sourceType}|surname-title|${surname}|${title}` : undefined,
+    surname && title && year ? `${sourceType}|surname-title-year|${surname}|${title}|${year}` : undefined
+  ].filter((key): key is string => Boolean(key));
+  const matchedKey = matchKeys.find((key) => registry.has(key));
   const findings: CitationFinding[] = [];
   const add = (code: string, message: string, rule: string, severity: Severity, suggestion?: string) =>
     findings.push({ code, message, rule, severity, original: text, suggestion });
@@ -198,8 +209,10 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
   if (!/[.!?]$/.test(text.trim()))
     add("KALCI-PUNCT-001", "The citation should end with a full stop.", "KALCI Guide, punctuation", "error", tidyText(text));
 
-  const occurrence: Occurrence = sourceKey ? (registry.has(sourceKey) ? "subsequent" : "first") : "unknown";
-  if (sourceKey && !registry.has(sourceKey)) registry.set(sourceKey, citationNumber);
+  const occurrence: Occurrence = matchedKey ? "subsequent" : matchKeys.length ? "first" : "unknown";
+  if (!matchedKey && matchKeys.length) {
+    for (const key of matchKeys) registry.set(key, citationNumber);
+  }
 
   if (occurrence === "subsequent" && sourceType === "book")
     add("KALCI-BOOK-002", "This appears to be a subsequent book citation. KALCI requires the author's second name in subsequent mention.", "KALCI Guide, books — subsequent mention", "review", "Review the shortened subsequent form for this source.");
@@ -259,6 +272,18 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
       severity: "error",
       original: text
     });
+  }
+
+  const generalChecks: Array<[string, RegExp, string, string, Severity]> = [
+    ["KALCI-PLURAL-001", /\b[A-Z]{2,}['’]s\b/, "Do not use apostrophes in abbreviated plurals.", "KALCI PDF, page 2 — General guidelines", "error"],
+    ["KALCI-DECADE-001", /\b(?:19|20)\d{2}['’]s\b/, "Do not use apostrophes when writing decades.", "KALCI PDF, page 2 — General guidelines", "error"],
+    ["KALCI-ROMAN-001", /\b(?:[IVXLCDM]{4,})\b/, "Avoid Roman numerals in the citation text.", "KALCI PDF, page 3 — General guidelines", "warning"],
+    ["KALCI-COMMA-001", /\b\d{4,}\b/, "Figures with more than three digits should use commas.", "KALCI PDF, page 3 — General guidelines", "warning"],
+    ["KALCI-SUPERSCRIPT-001", /\b\d+(?:st|nd|rd|th)\b/i, "Avoid superscript-style ordinal forms; write ordinals in words.", "KALCI PDF, page 3 — General guidelines", "info"]
+  ];
+
+  for (const [code, pattern, message, rule, severity] of generalChecks) {
+    if (pattern.test(text)) findings.push({ code, message, rule, severity, original: text });
   }
 
   return { id: segmentId, raw: text, sourceType, occurrence, sourceKey, components, findings, correctedText };
