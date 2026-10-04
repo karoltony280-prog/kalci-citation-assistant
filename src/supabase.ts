@@ -124,6 +124,7 @@ export async function saveDocument(input: {
     sourceType: string;
     confidence: number;
     sourceKey?: string;
+    occurrenceIndex?: number;
   }>;
 }): Promise<PersistedDocument> {
   if (!supabase) throw new Error("Supabase is not configured.");
@@ -235,7 +236,7 @@ export async function saveDocument(input: {
           source_id: citation.sourceKey ? sourceIdByKey.get(citation.sourceKey) ?? null : null,
           footnote_number: citation.footnoteNumber,
           segment_number: citation.segmentNumber,
-          occurrence_index: undefined,
+          occurrence_index: citation.occurrenceIndex ?? null,
           citation_stage: citation.citationStage,
           raw_text: citation.rawText,
           normalized_text: citation.normalizedText,
