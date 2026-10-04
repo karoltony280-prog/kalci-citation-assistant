@@ -126,3 +126,7 @@ button:disabled{opacity:.55;cursor:not-allowed}
 .auth-switch{margin-top:14px;color:#6b2224}
 .auth-loading{min-height:100vh;display:grid;place-items:center;background:#f6f3ef;color:#6b2224;font:18px Georgia,serif}
 
+
+.vault-bar{width:min(1320px,88vw);margin:18px auto 0;background:#fff;border:1px solid #e8dfd7;border-radius:16px;padding:13px 16px;display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;position:relative}
+.vault-bar>div:first-child{min-width:0}.vault-bar b,.vault-bar small{display:block}.vault-bar b{margin-top:4px;font:600 15px Georgia,serif;overflow-wrap:anywhere}.vault-bar small{margin-top:3px;color:#8a7d74;font-size:10px}.vault-actions{display:flex;align-items:center;gap:7px}.vault-panel{grid-column:1/-1;border-top:1px solid #eee7df;margin-top:4px;padding-top:4px;max-height:320px;overflow:auto}.vault-row{width:100%;display:flex;justify-content:space-between;align-items:center;gap:12px;border:0;border-bottom:1px solid #eee7df;background:#fff;text-align:left;padding:13px 4px}.vault-row:hover{background:#fcfaf7}.vault-row b,.vault-row small{display:block}.vault-row b{font-size:12px}.vault-row small{margin-top:4px;color:#8a7d74;font-size:10px}.vault-row>span{white-space:nowrap;color:#6b2224;font-size:10px;font-weight:800}.vault-empty{padding:24px 4px;color:#8a7d74;font-size:12px}.vault-message{grid-column:1/-1;color:#6b2224;font-size:10px;line-height:1.5}
+@media (max-width:700px){.vault-bar{width:92vw;grid-template-columns:1fr}.vault-actions{flex-wrap:wrap}.vault-actions button{font-size:11px}}
