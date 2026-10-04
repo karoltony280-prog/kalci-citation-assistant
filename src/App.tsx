@@ -175,11 +175,7 @@ export default function App() {
     <div className="shell">
       <header className="topbar">
         <div className="brand">
-          <div className="crest">K</div>
-          <div>
-            <div className="brand-name">KALCI</div>
-            <div className="brand-sub">Citation Assistant</div>
-          </div>
+          <img className="brand-logo" src="/kalci-logo.jpg" alt="KALCI Citation Generator" />
         </div>
         <nav>
           <button className={active === "checker" ? "nav active" : "nav"} onClick={() => setActive("checker")}>Checker</button>
