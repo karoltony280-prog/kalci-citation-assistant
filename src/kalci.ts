@@ -32,6 +32,12 @@ export type TextEdit = {
   safe: boolean;
 };
 
+export type KalciTemplateDefinition = {
+  sourceType: string;
+  citationStage: "first" | "subsequent";
+  templateText: string;
+};
+
 export type CitationFinding = {
   code: string;
   message: string;
@@ -54,6 +60,7 @@ export type CitationSegment = {
   edits: TextEdit[];
   correctionReason?: string;
   correctionStage?: "first" | "subsequent";
+  templateText?: string;
 };
 
 export type CitationResult = {
@@ -394,7 +401,13 @@ function tidyText(text: string): string {
   return value.trim();
 }
 
-function analyseSegment(text: string, segmentId: string, registry: Map<string, number>, citationNumber: number): CitationSegment {
+function analyseSegment(
+  text: string,
+  segmentId: string,
+  registry: Map<string, number>,
+  citationNumber: number,
+  templates: KalciTemplateDefinition[]
+): CitationSegment {
   const sourceType = detectSourceType(text);
   const components = parseComponents(text, sourceType);
   const sourceKey = sourceFingerprint(text, sourceType);
@@ -451,6 +464,10 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     );
   }
 
+  const templateText = templates.find(
+    (template) => template.sourceType === sourceType && template.citationStage === occurrence
+  )?.templateText;
+
   const requiredByType: Record<string, string[]> = {
     BOOK: ["author", "title", "publisher", "year"],
     JOURNAL_ARTICLE: ["author", "title", "publisher", "year"],
@@ -468,7 +485,7 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
       findings.push({
         code: "KALCI-STRUCTURE-001",
         message: `The ${SOURCE_TYPE_NAMES[sourceType] ?? sourceType} citation may be missing a ${field.replace("_", " ")}.`,
-        rule: `KALCI template — ${SOURCE_TYPE_NAMES[sourceType] ?? sourceType}`,
+        rule: `KALCI template — ${SOURCE_TYPE_NAMES[sourceType] ?? sourceType}${templateText ? " · " + templateText : ""}`,
         severity: "review",
         original: text,
         suggestion: "Confirm the source-specific template before applying a structural correction.",
@@ -535,16 +552,17 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
     correctedText: correction.correctedText,
     edits: correction.edits,
     correctionReason: correction.reason,
-    correctionStage: correction.stage
+    correctionStage: correction.stage,
+    templateText
   };
 }
 
-export function analyzeFootnotes(raw: string[]): CitationResult[] {
+export function analyzeFootnotes(raw: string[], templates: KalciTemplateDefinition[] = []): CitationResult[] {
   const registry = new Map<string, number>();
   return raw.map((text, index) => {
     const number = index + 1;
     const segments = splitCompoundFootnote(text).map((segment, segmentIndex) =>
-      analyseSegment(segment, `${number}-${segmentIndex + 1}`, registry, number)
+      analyseSegment(segment, `${number}-${segmentIndex + 1}`, registry, number, templates)
     );
     const first = segments[0];
     const findings = segments.flatMap((segment) => segment.findings);
