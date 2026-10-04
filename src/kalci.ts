@@ -52,6 +52,7 @@ export type CitationSegment = {
   id: string;
   raw: string;
   sourceType: string;
+  sourceConfidence: number;
   occurrence: Occurrence;
   sourceKey?: string;
   components: SourceComponents;
@@ -341,12 +342,13 @@ function cleanKey(value: string): string {
   return canonical(value).replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
 }
 
-function detectSourceType(text: string): string {
+function detectSourceType(text: string): { type: string; confidence: number } {
   let best = { type: "OTHER", score: 0 };
   for (const [type, pattern, weight] of SOURCE_SIGNALS) {
+    pattern.lastIndex = 0;
     if (pattern.test(text) && weight > best.score) best = { type, score: weight };
   }
-  return best.type;
+  return { type: best.type, confidence: best.score };
 }
 function parseGenericParts(raw: string): string[] {
   return raw
@@ -493,7 +495,9 @@ function analyseSegment(
   citationNumber: number,
   templates: KalciTemplateDefinition[]
 ): CitationSegment {
-  const sourceType = detectSourceType(text);
+  const detected = detectSourceType(text);
+  const sourceType = detected.type;
+  const sourceConfidence = detected.confidence;
   const components = parseComponents(text, sourceType);
   const sourceKey = sourceFingerprint(text, sourceType);
   const title = components.title ? cleanKey(components.title) : "";
@@ -533,6 +537,20 @@ function analyseSegment(
     add("KALCI-PUNCT-001", "The citation should end with a full stop.", "KALCI Guide, punctuation", "error", tidyText(text));
 
   const occurrence: Occurrence = matchedKey ? "subsequent" : matchKeys.length ? "first" : "unknown";
+
+  if (sourceType === "OTHER" || sourceConfidence < 0.60) {
+    findings.push({
+      code: "KALCI-CLASS-001",
+      message: sourceType === "OTHER"
+        ? "The source type could not be identified with sufficient confidence."
+        : "The source type is provisionally classified but should be confirmed before a structural correction.",
+      rule: "KALCI source taxonomy and classifier",
+      severity: "review",
+      original: text,
+      suggestion: "Confirm the source category; structural formatting is intentionally conservative for low-confidence classifications.",
+      safeToApply: false
+    });
+  }
   if (!matchedKey && matchKeys.length) {
     for (const key of matchKeys) registry.set(key, citationNumber);
   }
@@ -630,6 +648,7 @@ function analyseSegment(
     id: segmentId,
     raw: text,
     sourceType,
+    sourceConfidence,
     occurrence,
     sourceKey,
     components,
@@ -655,6 +674,7 @@ export function analyzeFootnotes(raw: string[], templates: KalciTemplateDefiniti
       number,
       text,
       sourceType: segments.length > 1 ? "compound" : (first?.sourceType ?? "other"),
+      sourceConfidence: segments.length === 1 ? (first?.sourceConfidence ?? 0) : 0,
       occurrence: segments.length === 1 ? (first?.occurrence ?? "unknown") : "unknown",
       sourceKey: segments.length === 1 ? first?.sourceKey : undefined,
       components: segments.length === 1 ? (first?.components ?? {}) : {},
