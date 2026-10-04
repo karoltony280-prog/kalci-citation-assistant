@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KALCI Citation Assistant</title>
+  <link rel="stylesheet" href="/addin/taskpane.css" />
+  <script src="https://appsforoffice.microsoft.com/lib/1/hosted/office.js"></script>
+</head>
+<body>
+  <div class="app">
+    <div class="brand"><div class="crest">K</div><div><b>KALCI</b><span>Citation Assistant</span></div></div>
+    <div class="toolbar">
+      <button id="scan">Scan footnotes</button>
+      <button id="clear" class="secondary">Clear marks</button>
+    </div>
+    <div id="status" class="status">Ready. Open a Word document containing footnotes.</div>
+    <div id="stats" class="stats"></div>
+    <div id="findings"></div>
+  </div>
+  <script src="/addin/taskpane.js"></script>
+</body>
+</html>
