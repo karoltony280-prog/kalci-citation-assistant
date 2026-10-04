@@ -1,15 +1,11 @@
-import { createClient, type Session, type User } from "@supabase/supabase-js";
+import { createClient, type Session } from "@supabase/supabase-js";
 
 const url = import.meta.env.VITE_SUPABASE_URL as string | undefined;
 const key = import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY as string | undefined;
 
 export const supabaseConfigured = Boolean(url && key);
 export const supabase = supabaseConfigured ? createClient(url!, key!, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-    detectSessionInUrl: true
-  }
+  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true }
 }) : null;
 
 async function getJson<T>(path: string): Promise<T> {
@@ -61,6 +57,10 @@ export type PersistedDocument = {
   updated_at: string;
 };
 
+export type PersistedDocumentData = PersistedDocument & {
+  footnotes: Array<{ footnote_number: number; raw_text: string; validation_status: string }>;
+};
+
 export async function getCurrentSession(): Promise<Session | null> {
   if (!supabase) return null;
   const { data, error } = await supabase.auth.getSession();
@@ -94,35 +94,38 @@ export async function signOut() {
   if (error) throw error;
 }
 
-export async function saveDocument(
-  input: {
-    id?: string;
-    title: string;
-    fileName?: string | null;
-    styleId?: string | null;
-    footnotes: Array<{ number: number; rawText: string; validationStatus: "pending"|"valid"|"error"|"warning"|"review" }>;
-    sources: Array<{
-      canonicalKey: string;
-      canonicalName: string;
-      sourceType: string;
-      author?: string;
-      title?: string;
-      year?: string;
-      publisher?: string;
-      metadata?: Record<string, unknown>;
-    }>;
-    citations: Array<{
-      footnoteNumber: number;
-      segmentNumber: number;
-      rawText: string;
-      normalizedText: string;
-      citationStage: "first"|"subsequent";
-      sourceType: string;
-      confidence: number;
-      sourceKey?: string;
-    }>;
-  }
-): Promise<PersistedDocument> {
+async function throwOnError(promise: PromiseLike<{ error: { message: string } | null }>, label: string) {
+  const { error } = await promise;
+  if (error) throw new Error(`${label}: ${error.message}`);
+}
+
+export async function saveDocument(input: {
+  id?: string;
+  title: string;
+  fileName?: string | null;
+  styleId?: string | null;
+  footnotes: Array<{ number: number; rawText: string; validationStatus: "pending"|"valid"|"error"|"warning"|"review" }>;
+  sources: Array<{
+    canonicalKey: string;
+    canonicalName: string;
+    sourceType: string;
+    author?: string;
+    title?: string;
+    year?: string;
+    publisher?: string;
+    metadata?: Record<string, unknown>;
+  }>;
+  citations: Array<{
+    footnoteNumber: number;
+    segmentNumber: number;
+    rawText: string;
+    normalizedText: string;
+    citationStage: "first"|"subsequent";
+    sourceType: string;
+    confidence: number;
+    sourceKey?: string;
+  }>;
+}): Promise<PersistedDocument> {
   if (!supabase) throw new Error("Supabase is not configured.");
   const session = await getCurrentSession();
   if (!session?.user) throw new Error("Sign in before saving a document.");
@@ -144,9 +147,22 @@ export async function saveDocument(
 
   const documentId = document.id as string;
 
-  await supabase.from("footnotes").delete().eq("document_id", documentId);
-  await supabase.from("citations").delete().eq("document_id", documentId);
-  await supabase.from("sources").delete().eq("document_id", documentId);
+  await throwOnError(
+    supabase.from("citation_occurrences").delete().eq("document_id", documentId),
+    "Could not clear citation occurrences"
+  );
+  await throwOnError(
+    supabase.from("citations").delete().eq("document_id", documentId),
+    "Could not clear citations"
+  );
+  await throwOnError(
+    supabase.from("footnotes").delete().eq("document_id", documentId),
+    "Could not clear footnotes"
+  );
+  await throwOnError(
+    supabase.from("sources").delete().eq("document_id", documentId),
+    "Could not clear sources"
+  );
 
   if (input.footnotes.length) {
     const { error } = await supabase.from("footnotes").insert(
@@ -246,4 +262,26 @@ export async function listMyDocuments(): Promise<PersistedDocument[]> {
     .limit(20);
   if (error) throw error;
   return (data ?? []) as PersistedDocument[];
+}
+
+export async function loadDocument(id: string): Promise<PersistedDocumentData> {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { data: document, error: documentError } = await supabase
+    .from("documents")
+    .select("id,title,file_name,status,updated_at")
+    .eq("id", id)
+    .single();
+  if (documentError) throw documentError;
+
+  const { data: footnotes, error: footnoteError } = await supabase
+    .from("footnotes")
+    .select("footnote_number,raw_text,validation_status")
+    .eq("document_id", id)
+    .order("footnote_number", { ascending: true });
+  if (footnoteError) throw footnoteError;
+
+  return {
+    ...(document as PersistedDocument),
+    footnotes: (footnotes ?? []) as PersistedDocumentData["footnotes"]
+  };
 }
