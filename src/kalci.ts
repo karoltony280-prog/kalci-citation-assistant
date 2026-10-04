@@ -582,7 +582,15 @@ function analyseSegment(
     surname && title ? `${sourceType}|surname-title|${surname}|${title}` : undefined,
     surname && title && year ? `${sourceType}|surname-title-year|${surname}|${title}|${year}` : undefined
   ].filter((key): key is string => Boolean(key));
-  const matchedKey = matchKeys.find((key) => registry.has(key));
+  let matchedKey = matchKeys.find((key) => registry.has(key));
+
+  if (!matchedKey && surname) {
+    const authorCandidates = Array.from(registry.keys()).filter((key) =>
+      key.startsWith(sourceType + "|author-title|" + surname + "|")
+    );
+    if (authorCandidates.length === 1) matchedKey = authorCandidates[0];
+  }
+
   const findings: CitationFinding[] = [];
   const add = (code: string, message: string, rule: string, severity: Severity, suggestion?: string) =>
     findings.push({ code, message, rule, severity, original: text, suggestion });
