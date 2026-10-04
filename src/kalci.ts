@@ -385,12 +385,12 @@ function parseJournalComponents(raw: string): SourceComponents {
   const parts = parseGenericParts(raw);
   components.author = parts[0];
   components.title = parts[1];
-  const volumeYear = raw.match(/\b(\d+)\s+([^,]+)\s+\((19|20)\d{2}\)\s+(\d+(?:[-–]\d+)?)\b/);
+  const volumeYear = raw.match(/\b(\d+)\s+([^,]+)\s+((?:19|20)\d{2})\s+([0-9]+(?:[-–][0-9]+)?)\b/);
   if (volumeYear) {
     components.volume = volumeYear[1];
     components.journal = volumeYear[2].trim();
-    components.year = volumeYear[3] + volumeYear[4];
-    components.page = volumeYear[5];
+    components.year = volumeYear[3];
+    components.page = volumeYear[4];
   } else {
     components.journal = parts.find((part) => /\b(?:Journal|Review|Quarterly)\b/i.test(part));
     components.year = raw.match(/\b(?:19|20)\d{2}\b/)?.[0];
