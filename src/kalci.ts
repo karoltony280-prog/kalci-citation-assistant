@@ -77,6 +77,7 @@ export type CitationResult = {
 
 const SOURCE_SIGNALS: Array<[string, RegExp, number]> = [
   ["KENYAN_CASE", /\beKLR\b|\bKLR\b|\bEA\b/i, 0.90],
+  ["FOREIGN_CASE", /\b[^,;]{2,120}\s+v(?:s|ersus)?\.?\s+[^,;]{2,120}\b/i, 0.55],
   ["AFRICAN_COURT", /\bAfCLR\b|\bAfrican Court on Human and Peoples/i, 0.95],
   ["AFRICAN_COMMISSION", /\bACmHPR\b|\bAfrican Commission/i, 0.95],
   ["EACJ", /\bEACJ\b|East African Court of Justice/i, 0.95],
@@ -89,6 +90,7 @@ const SOURCE_SIGNALS: Array<[string, RegExp, number]> = [
   ["WTO", /\bWT\/DS\d+/i, 0.95],
   ["LEGISLATION", /\b(?:Act|Bill|Regulations?|Rules?|Constitution)\b|\bCap\.?\s*\d+/i, 0.82],
   ["INTERNATIONAL_INSTRUMENT", /\b(?:Charter|Convention|Covenant|Declaration|Resolution|Protocol|Treaty)\b/i, 0.78],
+  ["CHAPTER_IN_BOOK", /\bin\s+[^,]+\([^)]*eds?\)/i, 0.74],
   ["JOURNAL_ARTICLE", /\b(?:Journal|Law Review|Law Quarterly|Review)\b|\(\d{4}\)\s*\d+/i, 0.72],
   ["DISSERTATION", /\b(?:dissertation|thesis)\b/i, 0.90],
   ["CONFERENCE_PAPER", /\bPaper presented at\b|conference.*\bheld on\b/i, 0.90],
@@ -346,24 +348,107 @@ function detectSourceType(text: string): string {
   }
   return best.type;
 }
+function parseGenericParts(raw: string): string[] {
+  return raw
+    .replace(/[.!?]$/, "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+function parseDate(raw: string): string | undefined {
+  const monthDate = raw.match(/\b\d{1,2}\s+(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{4}\b/i)?.[0];
+  if (monthDate) return monthDate;
+  const iso = raw.match(/\b\d{4}-\d{2}-\d{2}\b/)?.[0];
+  return iso;
+}
+
+function parseCaseComponents(raw: string): SourceComponents {
+  const components: SourceComponents = {};
+  const clean = raw.replace(/[.!?]$/, "").trim();
+  const versus = clean.match(/^(.+?\s+v(?:s|ersus)?\.?\s+.+?)(?:,\s+(.+))?$/i);
+  if (versus) {
+    components.title = versus[1].trim();
+    const tail = versus[2] ?? "";
+    components.caseNumber = tail.match(/\b(?:Civil|Constitutional|Petition|Appeal|Application|Reference|Criminal)\s+(?:Case|Appeal|Petition|Application|Reference)?\s*\d+\s+of\s+\d{4}\b/i)?.[0];
+    components.reporter = clean.match(/\b(?:eKLR|KLR|EA|AfCLR|ACmHPR|EACJ|ECtHR|ICJ Reports|IACtHR|IACmHR)\b/i)?.[0];
+    components.paragraph = clean.match(/\bpara\s+([A-Za-z0-9.-]+)/i)?.[1];
+    const year = clean.match(/\b(?:19|20)\d{2}\b/)?.[0];
+    if (year) components.year = year;
+    return components;
+  }
+  return components;
+}
+
+function parseJournalComponents(raw: string): SourceComponents {
+  const components: SourceComponents = {};
+  const parts = parseGenericParts(raw);
+  components.author = parts[0];
+  components.title = parts[1];
+  const volumeYear = raw.match(/\b(\d+)\s+([^,]+)\s+\((19|20)\d{2}\)\s+(\d+(?:[-–]\d+)?)\b/);
+  if (volumeYear) {
+    components.volume = volumeYear[1];
+    components.journal = volumeYear[2].trim();
+    components.year = volumeYear[3] + volumeYear[4];
+    components.page = volumeYear[5];
+  } else {
+    components.journal = parts.find((part) => /\b(?:Journal|Review|Quarterly)\b/i.test(part));
+    components.year = raw.match(/\b(?:19|20)\d{2}\b/)?.[0];
+    components.page = extractPage(raw);
+  }
+  return components;
+}
+
+function parseNewspaperComponents(raw: string): SourceComponents {
+  const parts = parseGenericParts(raw);
+  return {
+    author: parts[0],
+    title: parts[1],
+    publisher: parts[2],
+    date: parseDate(raw) ?? raw.match(/\b(?:19|20)\d{2}\b/)?.[0]
+  };
+}
+
+function parseReportComponents(raw: string): SourceComponents {
+  const parts = parseGenericParts(raw);
+  const year = raw.match(/\b(?:19|20)\d{2}\b/)?.[0];
+  const yearIndex = year ? parts.findIndex((part) => part === year) : -1;
+  return {
+    author: parts[0],
+    title: parts[1],
+    publisher: yearIndex > 1 ? parts[yearIndex - 1] : undefined,
+    year,
+    page: extractPage(raw)
+  };
+}
+
 function parseComponents(text: string, sourceType: string): SourceComponents {
   const raw = text.trim();
-  const components: SourceComponents = {};
   const url = raw.match(/https?:\/\/\S+/i)?.[0];
-  if (url) components.url = url.replace(/[),.;]+$/, "");
 
+  if (["KENYAN_CASE","FOREIGN_CASE","EACJ","AFRICAN_COURT","AFRICAN_COMMISSION","ECTHR","ICJ","IACTHR","IACMHR","UN_COMMITTEE","ARBITRATION","WTO"].includes(sourceType)) {
+    return parseCaseComponents(raw);
+  }
+  if (sourceType === "LEGISLATION") return parseLegislation(raw);
+  if (sourceType === "JOURNAL_ARTICLE") return parseJournalComponents(raw);
+  if (sourceType === "NEWSPAPER") return parseNewspaperComponents(raw);
+  if (sourceType === "REPORT" || sourceType === "INSTITUTIONAL_AUTHOR") return parseReportComponents(raw);
+  if (sourceType === "BOOK" || sourceType === "DISSERTATION" || sourceType === "SELF_PUBLISHED_ARTICLE") return parseBookLike(raw);
+
+  const parts = parseGenericParts(raw);
+  const components: SourceComponents = {};
+  if (parts[0]) components.author = parts[0].replace(/\.$/, "");
+  if (parts[1]) components.title = parts[1].replace(/^["“]|["”]$/g, "").trim();
   const year = raw.match(/\b(?:19|20)\d{2}\b/)?.[0];
   if (year) components.year = year;
-
-  const page = raw.match(/(?:^|,\s*)(?:p\.?\s*)?(\d{1,5})(?:\s*[-–]\s*(\d{1,5}))?\s*\.?$/i)?.[1];
-  if (page) components.page = page;
-
-  const parts = raw.split(",").map((p) => p.trim()).filter(Boolean);
-  if (parts.length > 0) components.author = parts[0].replace(/\.$/, "");
-  if (parts.length > 1) components.title = parts[1].replace(/^["“]|["”]$/g, "").trim();
-  if ((sourceType === "BOOK" || sourceType === "REPORT" || sourceType === "INSTITUTIONAL_AUTHOR" || sourceType === "SELF_PUBLISHED_ARTICLE") && parts.length >= 3) components.publisher = parts[2].replace(/\.$/, "");
-  if (sourceType === "INTERNET_RESOURCE") components.title = parts[0]?.replace(/\.$/, "");
-
+  components.date = parseDate(raw);
+  components.page = extractPage(raw);
+  if (url) components.url = url.replace(/[),.;]+$/, "");
+  if (sourceType === "INTERNET_RESOURCE") {
+    components.url = url?.replace(/[),.;]+$/, "");
+    components.title = parts[1] ?? parts[0]?.replace(/[.!?]$/, "");
+  }
+  if (sourceType === "PERSONAL_COMMUNICATION") components.date = parseDate(raw);
   return components;
 }
 
