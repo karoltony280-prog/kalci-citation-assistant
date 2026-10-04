@@ -69,7 +69,8 @@ function buildPayload(value: string, results: CitationResult[]) {
         citationStage: segment.sourceOccurrence === 1 || segment.occurrence === "first" ? "first" : "subsequent",
         sourceType: segment.sourceType,
         confidence: segment.sourceConfidence,
-        sourceKey: segment.sourceKey
+        sourceKey: segment.sourceKey,
+        occurrenceIndex: segment.sourceOccurrence
       });
     });
   });
