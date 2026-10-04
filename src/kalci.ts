@@ -62,6 +62,10 @@ export type CitationSegment = {
   correctionReason?: string;
   correctionStage?: "first" | "subsequent";
   templateText?: string;
+  sourceOccurrence?: number;
+  sourceOccurrenceCount?: number;
+  sourceFootnotes?: number[];
+  sourceFirstId?: string;
 };
 
 export type CitationResult = {
@@ -741,9 +745,40 @@ function analyseSegment(
   };
 }
 
+function attachSourceChains(results: CitationResult[]): CitationResult[] {
+  const groups = new Map<string, CitationSegment[]>();
+
+  for (const result of results) {
+    for (const segment of result.segments) {
+      if (!segment.sourceKey) continue;
+      const group = groups.get(segment.sourceKey) ?? [];
+      group.push(segment);
+      groups.set(segment.sourceKey, group);
+    }
+  }
+
+  for (const group of groups.values()) {
+    group.sort((a, b) => {
+      const [aFootnote, aSegment] = a.id.split("-").map(Number);
+      const [bFootnote, bSegment] = b.id.split("-").map(Number);
+      return aFootnote - bFootnote || aSegment - bSegment;
+    });
+
+    const footnotes = Array.from(new Set(group.map((segment) => Number(segment.id.split("-")[0]))));
+    group.forEach((segment, index) => {
+      segment.sourceOccurrence = index + 1;
+      segment.sourceOccurrenceCount = group.length;
+      segment.sourceFootnotes = footnotes;
+      segment.sourceFirstId = group[0]?.id;
+    });
+  }
+
+  return results;
+}
+
 export function analyzeFootnotes(raw: string[], templates: KalciTemplateDefinition[] = []): CitationResult[] {
   const registry = new Map<string, number>();
-  return raw.map((text, index) => {
+  const results = raw.map((text, index) => {
     const number = index + 1;
     const segments = splitCompoundFootnote(text).map((segment, segmentIndex) =>
       analyseSegment(segment, `${number}-${segmentIndex + 1}`, registry, number, templates)
@@ -763,6 +798,8 @@ export function analyzeFootnotes(raw: string[], templates: KalciTemplateDefiniti
       segments
     };
   }).filter((result) => result.text.trim().length > 0);
+
+  return attachSourceChains(results);
 }
 
 export const KALCI_RULES = [
