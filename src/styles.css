@@ -150,3 +150,5 @@ button:disabled{opacity:.55;cursor:not-allowed}
 
 .brand-logo{display:block;width:172px;height:58px;object-fit:contain;object-position:center;border-radius:8px}.brand{min-width:172px}
 @media (max-width:700px){.brand-logo{width:138px;height:48px}.brand{min-width:138px}}
+
+.auth-logo{display:block;width:min(300px,72%);height:auto;max-height:140px;object-fit:contain;margin:0 auto 18px;border-radius:12px}.auth-card .eyebrow{display:block;text-align:center}.auth-card h1{text-align:center}.auth-card .lead{text-align:center;margin-left:auto;margin-right:auto}
