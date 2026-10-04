@@ -1,5 +1,6 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { analyzeFootnotes, KALCI_RULES, type CitationResult } from "./kalci";
+import { extractDocxFootnotesFromFile } from "./docx";
 import { loadKalciStyle, supabaseConfigured } from "./supabase";
 
 const SAMPLE = [
@@ -15,11 +16,12 @@ export default function App() {
   const [active, setActive] = useState<"checker" | "rules" | "word">("checker");
   const [dbStyle, setDbStyle] = useState<{name:string;version:string;status:string} | null>(null);
   const [dbError, setDbError] = useState<string | null>(null);
+  const [documentName, setDocumentName] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    loadKalciStyle()
-      .then(setDbStyle)
-      .catch((error) => setDbError(error instanceof Error ? error.message : String(error)));
+    loadKalciStyle().then(setDbStyle).catch((error) => setDbError(error instanceof Error ? error.message : String(error)));
   }, []);
 
   const stats = useMemo(() => {
@@ -40,6 +42,24 @@ export default function App() {
     const corrected = results.map((r) => r.correctedText).join("\n");
     setValue(corrected);
     setResults(analyzeFootnotes(corrected.split(/\r?\n/)));
+  }
+
+  async function importDocx(file: File) {
+    setImporting(true);
+    try {
+      const footnotes = await extractDocxFootnotesFromFile(file);
+      if (!footnotes.length) throw new Error("No numbered footnotes were found in this Word document.");
+      const imported = footnotes.map((item) => item.raw);
+      setValue(imported.join("\n"));
+      setResults(analyzeFootnotes(imported));
+      setDocumentName(file.name);
+      setActive("checker");
+    } catch (error) {
+      window.alert(error instanceof Error ? error.message : String(error));
+    } finally {
+      setImporting(false);
+      if (fileInput.current) fileInput.current.value = "";
+    }
   }
 
   return (
@@ -66,7 +86,7 @@ export default function App() {
               <div>
                 <span className="eyebrow">DOCUMENT-AWARE LEGAL CITATION INTELLIGENCE</span>
                 <h1>Check the citation.<br /><span>Track the source.</span></h1>
-                <p>Paste one footnote per line. KALCI analyses citation language, source type, source recurrence and compound footnotes so a citation is understood in the context of the document.</p>
+                <p>Import a real Word document or paste footnotes. KALCI reads the document's footnote stream, identifies source recurrence and compound citations, then applies deterministic rules before asking for human review.</p>
                 <div className="connection">
                   <span className={dbStyle ? "dot online" : dbError ? "dot offline" : "dot"}></span>
                   {dbStyle ? `KALCI database connected · ${dbStyle.version}` : dbError ? "Local engine active · database unavailable" : supabaseConfigured ? "Connecting to KALCI database…" : "Local engine active"}
@@ -76,6 +96,18 @@ export default function App() {
                 <span>DOCUMENT SCORE</span>
                 <strong>{stats.score}%</strong>
                 <small>{stats.total} footnotes · {stats.sources} tracked sources</small>
+              </div>
+            </section>
+
+            <section className="import-bar">
+              <div>
+                <b>{documentName ?? "No Word document imported"}</b>
+                <span>{documentName ? "Footnotes extracted from the uploaded .docx file" : "Upload a .docx to analyse its actual Word footnotes"}</span>
+              </div>
+              <div className="import-actions">
+                <input ref={fileInput} type="file" accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document" hidden onChange={(e) => e.target.files?.[0] && importDocx(e.target.files[0])} />
+                <button className="secondary" disabled={importing} onClick={() => fileInput.current?.click()}>{importing ? "Reading Word document…" : "Import .docx"}</button>
+                <button className="ghost" onClick={() => { setDocumentName(null); setValue(SAMPLE.join("\n")); setResults(analyzeFootnotes(SAMPLE)); }}>Load sample</button>
               </div>
             </section>
 
@@ -153,7 +185,7 @@ export default function App() {
           <section className="rules-page">
             <span className="eyebrow">MICROSOFT WORD</span>
             <h1>Use KALCI inside the document.</h1>
-            <p className="lead">The companion Office Add-in is designed to read actual Word footnotes, run the same document-level logic, navigate to a problematic citation and apply a correction.</p>
+            <p className="lead">The companion Office Add-in reads actual Word footnotes and sends them through the same KALCI analysis endpoint used by the web application.</p>
             <div className="install-box">
               <h2>Word Add-in manifest</h2>
               <p><a href="/addin/manifest.xml" target="_blank" rel="noreferrer">Open the KALCI manifest</a> and sideload it into Word. The task pane is served from this Vercel deployment.</p>
