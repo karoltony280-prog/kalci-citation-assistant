@@ -130,6 +130,10 @@ function extractPage(text: string): string | undefined {
   return match ? (match[2] ? match[1] + "–" + match[2] : match[1]) : undefined;
 }
 
+function removeFinalStop(text: string): string {
+  return text.trim().replace(/[.!?]$/, "");
+}
+
 function surnameOf(author?: string): string | undefined {
   if (!author) return undefined;
   const cleaned = author.trim().replace(/[.]+/g, "");
