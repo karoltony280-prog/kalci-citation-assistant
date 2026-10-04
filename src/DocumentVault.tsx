@@ -20,10 +20,9 @@ function validationStatus(result: CitationResult): "valid"|"error"|"warning"|"re
 }
 
 function buildPayload(value: string, results: CitationResult[]) {
-  const lines = value.split(/\r?\n/);
   const footnotes = results.map((result, index) => ({
     number: result.number || index + 1,
-    rawText: lines[index] ?? result.text,
+    rawText: result.text,
     validationStatus: validationStatus(result)
   }));
 
