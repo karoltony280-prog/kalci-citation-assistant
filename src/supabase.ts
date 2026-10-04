@@ -55,6 +55,7 @@ export type PersistedDocument = {
   file_name: string | null;
   status: string;
   updated_at: string;
+  version_number?: number;
 };
 
 export type DocumentVersion = {
@@ -362,7 +363,7 @@ export async function saveDocument(input: {
   });
   if (versionError) throw versionError;
 
-  return { ...(document as PersistedDocument), version_number: nextVersion } as PersistedDocument & { version_number: number };
+  return { ...(document as PersistedDocument), version_number: nextVersion };
 }
 
 export async function listDocumentVersions(documentId: string): Promise<DocumentVersion[]> {
