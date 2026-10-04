@@ -109,7 +109,7 @@ const SOURCE_SIGNALS: Array<[string, RegExp, number]> = [
 ];
 
 const SOURCE_TYPE_NAMES: Record<string, string> = {
-  KENYAN_CASE: "Kenyan case law", AFRICAN_COURT: "African Court",
+  KENYAN_CASE: "Kenyan case law", FOREIGN_CASE: "Foreign case law", CHAPTER_IN_BOOK: "Chapter in book", AFRICAN_COURT: "African Court",
   AFRICAN_COMMISSION: "African Commission", EACJ: "EACJ", ECTHR: "ECtHR",
   ICJ: "ICJ", IACTHR: "IACtHR", IACMHR: "IACmHR", UN_COMMITTEE: "UN Committee",
   ARBITRATION: "Arbitration", WTO: "WTO", LEGISLATION: "Legislation",
