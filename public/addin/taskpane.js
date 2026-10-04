@@ -149,10 +149,10 @@ function render() {
 
     const actions = f.findings?.length && corrected !== f.text
       ? `<div class="actions">
-          <button class="apply" onclick="applyOne(${index})">Apply correction</button>
+          <button class="apply" onclick="applyOne(${index})">Apply safe corrections</button>
           <button onclick="selectOne(${index})">Go to footnote</button>
         </div>
-        <div class="suggest">Suggested: ${escapeHtml(corrected)}</div>`
+        <div class="suggest"><b>Before:</b> ${escapeHtml(f.text)}<br><b>After:</b> ${escapeHtml(corrected)}</div>`
       : `<div class="actions"><button onclick="selectOne(${index})">Go to footnote</button></div>`;
 
     const segments = f.segments?.length > 1
@@ -177,14 +177,32 @@ function escapeHtml(value) {
 
 async function applyOne(index) {
   const finding = state.findings[index];
-  const replacement = finding?.correctedText || finding?.corrected;
-  if (!finding || !replacement || replacement === finding.text) return;
+  if (!finding) return;
 
   try {
     await Word.run(async (context) => {
       const item = context.document.body.footnotes.items[finding.number - 1];
-      item.body.insertText(replacement, "Replace");
-      await context.sync();
+      const segments = finding.segments?.length ? finding.segments : [{
+        raw: finding.text,
+        correctedText: finding.correctedText || finding.corrected
+      }];
+
+      let applied = 0;
+      for (const segment of segments) {
+        if (!segment?.raw || !segment.correctedText || segment.raw === segment.correctedText) continue;
+        const matches = item.body.search(segment.raw, { matchCase: true, matchWholeWord: false });
+        matches.load("items");
+        await context.sync();
+
+        if (!matches.items.length) continue;
+        matches.items[0].insertText(segment.correctedText, "Replace");
+        applied += 1;
+        await context.sync();
+      }
+
+      document.getElementById("status").textContent = applied
+        ? `Applied ${applied} safe correction${applied === 1 ? "" : "s"} in footnote ${finding.number}.`
+        : `No safe correction was applied to footnote ${finding.number}.`;
     });
     await scan();
   } catch (error) {
