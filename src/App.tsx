@@ -27,6 +27,7 @@ export default function App() {
   const [sourceTypes, setSourceTypes] = useState<KalciSourceType[]>([]);
   const [templates, setTemplates] = useState<KalciTemplate[]>([]);
   const [selectedType, setSelectedType] = useState("BOOK");
+  const [dismissedFindings, setDismissedFindings] = useState<Set<string>>(new Set());
   const fileInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
