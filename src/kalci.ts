@@ -42,14 +42,50 @@ export type CitationResult = {
   segments: CitationSegment[];
 };
 
-const SOURCE_PATTERNS: Array<[string, RegExp]> = [
-  ["case", /\b(?:v\.|versus)\b|\[?\d{4}\]?\s*(?:eKLR|KLR|EA|AC|UKSC|EWCA|USSC)\b/i],
-  ["legislation", /\b(?:Act|Bill|Regulations?|Rules?|Constitution)\b/i],
-  ["journal article", /\b(?:Journal|Law Review|Law Quarterly|Review)\b/i],
-  ["internet resource", /https?:\/\//i],
-  ["report", /\b(?:report|working paper|policy brief)\b/i],
-  ["book", /\b(?:Press|Publishers?|University|Ltd\.?|Limited)\b/i]
+const SOURCE_SIGNALS: Array<[string, RegExp, number]> = [
+  ["KENYAN_CASE", /\beKLR\b|\bKLR\b|\bEA\b/i, 0.90],
+  ["AFRICAN_COURT", /\bAfCLR\b|\bAfrican Court on Human and Peoples/i, 0.95],
+  ["AFRICAN_COMMISSION", /\bACmHPR\b|\bAfrican Commission/i, 0.95],
+  ["EACJ", /\bEACJ\b|East African Court of Justice/i, 0.95],
+  ["ECTHR", /\bECtHR\b|European Court of Human Rights/i, 0.95],
+  ["ICJ", /\bICJ Reports\b|International Court of Justice/i, 0.95],
+  ["IACTHR", /\bIACtHR\b|Inter-American Court of Human Rights/i, 0.95],
+  ["IACMHR", /\bIACmHR\b|Inter-American Commission/i, 0.95],
+  ["UN_COMMITTEE", /\b(?:CCPR|CRPD|CESCR|CEDAW)\b|UN Committee/i, 0.95],
+  ["ARBITRATION", /\bICSID\b|\bARB\/\d+/i, 0.90],
+  ["WTO", /\bWT\/DS\d+/i, 0.95],
+  ["LEGISLATION", /\b(?:Act|Bill|Regulations?|Rules?|Constitution)\b|\bCap\.?\s*\d+/i, 0.82],
+  ["INTERNATIONAL_INSTRUMENT", /\b(?:Charter|Convention|Covenant|Declaration|Resolution|Protocol|Treaty)\b/i, 0.78],
+  ["JOURNAL_ARTICLE", /\b(?:Journal|Law Review|Law Quarterly|Review)\b|\(\d{4}\)\s*\d+/i, 0.72],
+  ["DISSERTATION", /\b(?:dissertation|thesis)\b/i, 0.90],
+  ["CONFERENCE_PAPER", /\bPaper presented at\b|conference.*\bheld on\b/i, 0.90],
+  ["HANSARD", /\bHansard\b|National Assembly Hansard/i, 0.95],
+  ["PERSONAL_COMMUNICATION", /^(?:Email from|Telephone communication with|Personal communication with|Interview with|WhatsApp communication with)\b/i, 0.95],
+  ["GAZETTE_NOTICE", /\bKenya Gazette\b|\bGazette Notice\b/i, 0.95],
+  ["YOUTUBE_VIDEO", /\bYouTube\b|\b\d{1,2}:\d{2}\s+to\s+\d{1,2}:\d{2}\b/i, 0.90],
+  ["MOTION_PICTURE", /\b(?:motion picture|film)\b|\b(?:19|20)\d{2},\s*\d+:\d{2}:\d{2}/i, 0.90],
+  ["PRESS_RELEASE", /\bPress [Rr]elease\b/i, 0.90],
+  ["NEWSPAPER", /\b(?:Daily Nation|The Standard|The East African|The Star|Business Daily|New York Times|The Guardian)\b/i, 0.82],
+  ["INTERNET_RESOURCE", /https?:\/\/|\bwww\./i, 0.68],
+  ["INSTITUTIONAL_AUTHOR", /^(?:Government of|Ministry of|United Nations|World Bank|International Monetary Fund)\b/i, 0.65],
+  ["REPORT", /\b(?:report|assessment report|working paper|policy brief)\b/i, 0.62],
+  ["SELF_PUBLISHED_ARTICLE", /\b(?:SSRN|ResearchGate|Academia\.edu)\b/i, 0.62],
+  ["BOOK", /\b(?:University Press|Press|Publishers?|Books?|Ltd\.?|Limited)\b.*\b(?:19|20)\d{2}\b/i, 0.62]
 ];
+
+const SOURCE_TYPE_NAMES: Record<string, string> = {
+  KENYAN_CASE: "Kenyan case law", AFRICAN_COURT: "African Court",
+  AFRICAN_COMMISSION: "African Commission", EACJ: "EACJ", ECTHR: "ECtHR",
+  ICJ: "ICJ", IACTHR: "IACtHR", IACMHR: "IACmHR", UN_COMMITTEE: "UN Committee",
+  ARBITRATION: "Arbitration", WTO: "WTO", LEGISLATION: "Legislation",
+  INTERNATIONAL_INSTRUMENT: "International instrument", JOURNAL_ARTICLE: "Journal article",
+  DISSERTATION: "Dissertation", CONFERENCE_PAPER: "Conference paper", HANSARD: "Hansard",
+  PERSONAL_COMMUNICATION: "Personal communication", GAZETTE_NOTICE: "Gazette notice",
+  YOUTUBE_VIDEO: "YouTube video", MOTION_PICTURE: "Motion picture", PRESS_RELEASE: "Press release",
+  NEWSPAPER: "Newspaper", INTERNET_RESOURCE: "Internet resource",
+  INSTITUTIONAL_AUTHOR: "Institutional author", REPORT: "Report",
+  SELF_PUBLISHED_ARTICLE: "Self-published article", BOOK: "Book"
+};
 
 const KALCI_REPLACEMENTS: Array<[RegExp, string]> = [
   [/\bet\s+al\.?\b/gi, "and others"],
@@ -72,12 +108,12 @@ function cleanKey(value: string): string {
 }
 
 function detectSourceType(text: string): string {
-  for (const [name, pattern] of SOURCE_PATTERNS) {
-    if (pattern.test(text)) return name;
+  let best = { type: "OTHER", score: 0 };
+  for (const [type, pattern, weight] of SOURCE_SIGNALS) {
+    if (pattern.test(text) && weight > best.score) best = { type, score: weight };
   }
-  return "other";
+  return best.type;
 }
-
 function parseComponents(text: string, sourceType: string): SourceComponents {
   const raw = text.trim();
   const components: SourceComponents = {};
@@ -168,7 +204,64 @@ function analyseSegment(text: string, segmentId: string, registry: Map<string, n
   if (occurrence === "subsequent" && sourceType === "book")
     add("KALCI-BOOK-002", "This appears to be a subsequent book citation. KALCI requires the author's second name in subsequent mention.", "KALCI Guide, books — subsequent mention", "review", "Review the shortened subsequent form for this source.");
 
-  return { id: segmentId, raw: text, sourceType, occurrence, sourceKey, components, findings, correctedText: tidyText(text) };
+  const correctedText = tidyText(text);
+
+  const requiredByType: Record<string, string[]> = {
+    BOOK: ["author", "title", "publisher", "year"],
+    JOURNAL_ARTICLE: ["author", "title", "publisher", "year"],
+    NEWSPAPER: ["author", "title", "publisher", "date"],
+    DISSERTATION: ["author", "title", "year"],
+    INSTITUTIONAL_AUTHOR: ["author", "title"],
+    REPORT: ["author", "title"],
+    PERSONAL_COMMUNICATION: ["date"],
+    GAZETTE_NOTICE: ["date"]
+  };
+
+  for (const field of requiredByType[sourceType] ?? []) {
+    const found = components.some((component) => component.type === field);
+    if (!found) {
+      findings.push({
+        code: "KALCI-STRUCTURE-001",
+        message: `The ${SOURCE_TYPE_NAMES[sourceType] ?? sourceType} citation may be missing a ${field.replace("_", " ")}.`,
+        rule: `KALCI template — ${SOURCE_TYPE_NAMES[sourceType] ?? sourceType}`,
+        severity: "review",
+        original: text,
+        suggestion: "Confirm the source-specific template before applying a structural correction."
+      });
+    }
+  }
+
+  if (sourceType === "JOURNAL_ARTICLE" && /^[A-Z]{2,}(?:\s+[A-Z]{2,})*$/.test(components.find((c) => c.type === "publisher")?.value ?? "")) {
+    findings.push({
+      code: "KALCI-JOURNAL-001",
+      message: "Journal names should not be abbreviated.",
+      rule: "KALCI PDF, page 4 — Journal articles",
+      severity: "error",
+      original: text
+    });
+  }
+
+  if (sourceType === "LEGISLATION" && occurrence === "first" && !/\(No\.?\s*\d+\s+of\s+\d{4}\)|\(\d{4}\)/i.test(text)) {
+    findings.push({
+      code: "KALCI-LEGISLATION-001",
+      message: "First legislation citations should include the required year/number parenthetical.",
+      rule: "KALCI PDF, page 5 — Legislation",
+      severity: "review",
+      original: text
+    });
+  }
+
+  if (sourceType === "LEGISLATION" && occurrence === "subsequent" && /\(No\.?\s*\d+\s+of\s+\d{4}\)|\(\d{4}\)/i.test(text)) {
+    findings.push({
+      code: "KALCI-LEGISLATION-002",
+      message: "Subsequent legislation citations normally drop the bracketed number/year.",
+      rule: "KALCI PDF, page 5 — Legislation",
+      severity: "error",
+      original: text
+    });
+  }
+
+  return { id: segmentId, raw: text, sourceType, occurrence, sourceKey, components, findings, correctedText };
 }
 
 export function analyzeFootnotes(raw: string[]): CitationResult[] {
