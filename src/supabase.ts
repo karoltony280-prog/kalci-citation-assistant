@@ -104,6 +104,14 @@ export async function signUp(email: string, password: string) {
   return data;
 }
 
+export async function resetPassword(email: string) {
+  if (!supabase) throw new Error("Supabase is not configured.");
+  const { error } = await supabase.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin
+  });
+  if (error) throw error;
+}
+
 export async function signOut() {
   if (!supabase) return;
   const { error } = await supabase.auth.signOut();
